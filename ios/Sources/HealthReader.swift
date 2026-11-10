@@ -8,14 +8,26 @@ final class HealthReader {
     static let shared = HealthReader()
     let store = HKHealthStore()
 
-    func authorize() async throws {
-        guard HKHealthStore.isHealthDataAvailable() else { throw SyncError.config("Az Apple Egészség ezen a készüléken nem elérhető") }
+    func authorize(onlyHeartRate: Bool = false) async throws {
+        CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: előkészítés" : "HealthKit teljes engedélykérés: előkészítés")
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw SyncError.config("Az Apple Egészség ezen a készüléken nem elérhető")
+        }
         var types = Set<HKObjectType>()
-        for metric in Catalog.metrics { if let t = metric.sampleType { types.insert(t) } }
-        types.insert(HKObjectType.workoutType())
-        types.insert(HKSeriesType.workoutRoute())
-        types.insert(HKObjectType.electrocardiogramType())
+        if onlyHeartRate {
+            guard let rate = HKObjectType.quantityType(forIdentifier: .heartRate) else {
+                throw SyncError.config("Pulzus HealthKit-típus nem érhető el")
+            }
+            types.insert(rate)
+        } else {
+            for metric in Catalog.metrics { if let t = metric.sampleType { types.insert(t) } }
+            types.insert(HKObjectType.workoutType())
+            types.insert(HKSeriesType.workoutRoute())
+            types.insert(HKObjectType.electrocardiogramType())
+        }
+        CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: requestAuthorization meghívása" : "HealthKit teljes: requestAuthorization meghívása")
         try await store.requestAuthorization(toShare: [], read: types)
+        CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: engedélykérés visszatért" : "HealthKit teljes: engedélykérés visszatért")
     }
 
     func samplePage(_ type: HKSampleType, since: Date, anchor: HKQueryAnchor?, limit: Int = 300) async throws -> ([HKSample], [HKDeletedObject], HKQueryAnchor?, Int) {

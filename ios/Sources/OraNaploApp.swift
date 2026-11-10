@@ -75,7 +75,11 @@ struct ContentView: View {
                     card {
                         VStack(alignment: .leading, spacing: 14) {
                             section("1. Engedélyek", icon: "lock.shield")
-                            Button { Task { await engine.authorizeHealth() } } label: { buttonLabel("Apple Egészség engedélyezése", "heart.text.square", secondary: true) }
+                            Button { Task { await engine.authorizeHealth() } } label: { buttonLabel("Apple Egészség alapteszt (pulzus)", "heart.text.square", secondary: true) }
+                            Button { Task { await engine.authorizeAllHealth() } } label: { buttonLabel("Teljes HealthKit engedélykérés", "heart.circle", secondary: true) }
+                                .disabled(!engine.basicHealthFlowCompleted)
+                            Text("Először a pulzus tesztet indítsd. Ingyenes Sideloadly-aláírásnál a HealthKit jogosultság hiányozhat.")
+                                .font(.caption).foregroundStyle(.white.opacity(0.58))
                             Button { Task { await engine.login() } } label: { buttonLabel(engine.account.loggedIn ? "Google: \(engine.account.email)" : "Google-fiók csatlakoztatása", "person.crop.circle") }
                             if engine.account.loggedIn {
                                 Button("Google-fiók leválasztása") { engine.account.signOut() }.font(.caption).foregroundStyle(.white.opacity(0.6))
@@ -102,7 +106,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             section("3. Adatmentés", icon: "square.and.arrow.up")
                             Button { Task { await engine.sync() } } label: { buttonLabel(engine.busy ? "Dolgozunk…" : "Adatok mentése Google Sheetsbe", "arrow.triangle.2.circlepath") }
-                                .disabled(engine.busy || !engine.account.loggedIn)
+                                .disabled(engine.busy || !engine.account.loggedIn || !engine.fullHealthFlowCompleted)
                             if let url = engine.sheetURL {
                                 Link(destination: url) { buttonLabel("Google Sheets megnyitása", "arrow.up.right.square", secondary: true) }
                             }
@@ -136,6 +140,17 @@ struct ContentView: View {
                             Text("A 100 méteres futó- és gyalogló szakaszokat csak mentett, megfelelő GPS-útvonal alapján lehet kiszámítani. Pulzusérték csak meglévő mintákból kerül melléjük.")
                             Text("Apple Watch akkumulátor, alkalmazásonkénti képernyőidő és szoba CO₂ nem olvasható ki a HealthKitből. Ezek nem részei ennek az iPhone-változatnak.")
                         }.font(.footnote).foregroundStyle(.white.opacity(0.72))
+                    }
+                    card {
+                        VStack(alignment: .leading, spacing: 8) {
+                            section("Diagnosztika (adatmentés nélkül)", icon: "stethoscope")
+                            Text("Utolsó lépés: \(CrashCheckpoint.last)")
+                                .font(.caption).foregroundStyle(.white.opacity(0.7))
+                            Button("Diagnosztika másolása") {
+                                let currentID = Bundle.main.bundleIdentifier ?? "ismeretlen"
+                                UIPasteboard.general.string = "ÓraNapló diagnosztika\nApp ID: \(currentID)\nUtolsó lépés: \(CrashCheckpoint.last)"
+                            }.font(.subheadline.weight(.medium)).foregroundStyle(accent)
+                        }
                     }
                     Text("ÓraNapló · helyi és saját Google-fiókos adatkezelés · orvosi diagnózisra nem alkalmas")
                         .font(.caption2).foregroundStyle(.white.opacity(0.42)).frame(maxWidth: .infinity)

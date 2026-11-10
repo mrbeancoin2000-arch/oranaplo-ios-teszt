@@ -22,16 +22,37 @@ final class GoogleAccount: ObservableObject {
         } catch { loggedIn = false; email = "" }
     }
     func signIn() async throws {
-        guard !AppConfig.googleClientID.hasPrefix("ADD_") else {
-            throw SyncError.config("Hiányzik a Google iOS OAuth Client ID. Lásd: GOOGLE_BEALLITAS.md")
+        CrashCheckpoint.mark("Google: bejelentkezés előzetes ellenőrzése")
+        let client = AppConfig.googleClientID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !client.hasPrefix("ADD_"), client.hasSuffix(".apps.googleusercontent.com") else {
+            throw SyncError.config("Hiányzó vagy hibás Google iOS OAuth Client ID. Lásd: GOOGLE_BEALLITAS.md")
         }
-        guard let controller = UIViewController.topMost else { throw SyncError.config("Nem található bejelentkezési ablak") }
+        // The Google SDK can throw an Objective-C exception (not catchable with Swift do/catch)
+        // when its expected reversed-client-ID URL scheme is absent from the signed application.
+        let expectedScheme = client.split(separator: ".").reversed().joined(separator: ".")
+        let urlTypes = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        let installedSchemes = urlTypes.flatMap { $0["CFBundleURLSchemes"] as? [String] ?? [] }
+        guard installedSchemes.contains(where: { $0.caseInsensitiveCompare(expectedScheme) == .orderedSame }) else {
+            CrashCheckpoint.mark("Google: hibás visszairányítási URL-séma")
+            throw SyncError.config("A telepített app Google URL-sémája eltér. Elvárt: \(expectedScheme). Új Google-konfiguráció és IPA-fordítás szükséges.")
+        }
+        guard let bundleID = Bundle.main.bundleIdentifier, bundleID == "hu.oranaplo.ios" else {
+            CrashCheckpoint.mark("Google: Sideloadly által módosított bundle ID")
+            throw SyncError.config("Az alkalmazás azonosítója eltér a Google OAuth-ban beállított hu.oranaplo.ios azonosítótól (telepítve: \(Bundle.main.bundleIdentifier ?? "ismeretlen")). A Sideloadly beállításait ellenőrizni kell.")
+        }
+        guard let controller = UIViewController.topMost else {
+            throw SyncError.config("Nem található bejelentkezési ablak")
+        }
+        CrashCheckpoint.mark("Google: natív GoogleSignIn indítása")
         var user = try await GIDSignIn.sharedInstance.signIn(withPresenting: controller).user
+        CrashCheckpoint.mark("Google: alapbejelentkezés visszatért")
         if user.grantedScopes?.contains(Self.scope) != true {
+            CrashCheckpoint.mark("Google: drive.file jogosultság bekérése")
             user = try await user.addScopes([Self.scope], presenting: controller).user
         }
         loggedIn = true
         email = user.profile?.email ?? "Google-fiók"
+        CrashCheckpoint.mark("Google: sikeres bejelentkezés")
     }
     func token() async throws -> String {
         guard let current = GIDSignIn.sharedInstance.currentUser else { throw SyncError.config("Jelentkezz be a Google-fiókodba") }

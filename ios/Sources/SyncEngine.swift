@@ -7,7 +7,9 @@ import UserNotifications
 @MainActor
 final class SyncEngine: ObservableObject {
     @Published var busy = false
-    @Published var status = "Még nem történt szinkronizálás"
+    @Published var status = "Diagnosztika: " + CrashCheckpoint.last
+    @Published var basicHealthFlowCompleted = UserDefaults.standard.bool(forKey: "healthBasicCompleted")
+    @Published var fullHealthFlowCompleted = UserDefaults.standard.bool(forKey: "healthFullCompleted")
     @Published var lastSync = UserDefaults.standard.string(forKey: "lastSync") ?? "–"
     @Published var pendingCount = 0
     @Published var sheetID = UserDefaults.standard.string(forKey: "sheetID") ?? ""
@@ -26,12 +28,40 @@ final class SyncEngine: ObservableObject {
         UserDefaults.standard.set(Array(enabledGroups), forKey: "groups")
     }
     func authorizeHealth() async {
-        do { try await reader.authorize(); status = "Apple Egészség jogosultságkérés lezajlott"; await reader.enableBackgroundNotifications() }
-        catch { status = "Egészség: \(error.localizedDescription)" }
+        // The first on-device check requests ONLY heart rate to isolate entitlement issues
+        // from special HealthKit sample types. It is not full data authorization.
+        do {
+            try await reader.authorize(onlyHeartRate: true)
+            basicHealthFlowCompleted = true
+            UserDefaults.standard.set(true, forKey: "healthBasicCompleted")
+            status = "Alap HealthKit engedélykérés lefutott (csak pulzus). Következő: teljes jogosultság."
+        } catch {
+            CrashCheckpoint.mark("HealthKit alapteszt hiba: \(error.localizedDescription)")
+            status = "Egészség alapteszt: \(error.localizedDescription)"
+        }
+    }
+    func authorizeAllHealth() async {
+        guard basicHealthFlowCompleted else {
+            status = "Előbb futtasd a pulzus HealthKit-alaptesztet"
+            return
+        }
+        do {
+            try await reader.authorize()
+            fullHealthFlowCompleted = true
+            UserDefaults.standard.set(true, forKey: "healthFullCompleted")
+            status = "Teljes HealthKit engedélykérés lezajlott"
+            await reader.enableBackgroundNotifications()
+        } catch {
+            CrashCheckpoint.mark("HealthKit teljes engedélykérés hiba: \(error.localizedDescription)")
+            status = "Egészség teljes kérés: \(error.localizedDescription)"
+        }
     }
     func login() async {
         do { try await account.signIn(); status = "Google kapcsolat létrejött" }
-        catch { status = "Google: \(error.localizedDescription)" }
+        catch {
+            CrashCheckpoint.mark("Google hiba: \(error.localizedDescription)")
+            status = "Google: \(error.localizedDescription)"
+        }
     }
     func addJournalEntry(kind: String, note: String) async {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
