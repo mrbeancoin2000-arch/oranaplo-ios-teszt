@@ -112,6 +112,35 @@ struct SheetsAPI {
         }
         throw SyncError.config("Sikertelen adatküldés")
     }
+    /// Best-effort recovery after reinstall or a second device. The drive.file OAuth
+    /// scope restricts discovery to files created/opened through this application.
+    func findExistingSpreadsheet() async throws -> String? {
+        let token = try await account.token()
+        var components = URLComponents(string: "https://www.googleapis.com/drive/v3/files")!
+        components.queryItems = [
+            URLQueryItem(name: "q", value: "name = 'ÓraNapló – Egészségadatok' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false"),
+            URLQueryItem(name: "fields", value: "files(id,name,createdTime)"),
+            URLQueryItem(name: "orderBy", value: "createdTime desc"),
+            URLQueryItem(name: "pageSize", value: "30")
+        ]
+        guard let url = components.url else { return nil }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.timeoutInterval = 25
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw SyncError.config("A korábbi Google Sheets-fájlok keresése nem elérhető. Ellenőrizd, hogy a Google Drive API engedélyezve van-e.")
+        }
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let files = json["files"] as? [[String: Any]] else { return nil }
+        return files.first?["id"] as? String
+    }
+
+    func canAccessSpreadsheet(_ id: String) async -> Bool {
+        guard !id.isEmpty else { return false }
+        return (try? await request("GET", "/\(id)?fields=spreadsheetId")) != nil
+    }
+
     func createSpreadsheet() async throws -> String {
         let sheets: [[String: Any]] = Catalog.sheets.map { ["properties": ["title": $0, "gridProperties": ["frozenRowCount": 1]]] }
         let data = try await request("POST", "", body: ["properties": ["title": "ÓraNapló – Egészségadatok"], "sheets": sheets])

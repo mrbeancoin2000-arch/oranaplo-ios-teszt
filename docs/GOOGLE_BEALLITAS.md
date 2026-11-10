@@ -27,3 +27,9 @@ Hivatalos leírások:
 
 ## 2026-11-10 – Beállítási figyelmeztetés
 Ez a teljes projekt már tartalmazhatja a korábban megadott **nyilvános** `google_oauth.json` beállításokat. Ne töröld, amikor új ZIP-et bontasz ki. Ha a Google Cloudban másik OAuth klienst hoztál létre, ugyanitt frissítsd az ID-t és a telepített Sideloadly Bundle ID-t. A `configure.py` demó-beállítással nem enged buildet.
+
+### ÓraNapló 0.3.6: a saját táblázat megnyitása
+
+A bejelentkezett Google-fiókhoz létrehozott táblázat az **Áttekintés → Saját Google Sheets megnyitása** gombbal nyílik meg (a Google Sheets appban, ha az iOS oda irányít, egyébként böngészőben). Még nem létező fájlnál előbb a **Google Sheets létrehozása** gomb jelenik meg. Az alkalmazás fiókonként tárolja a fájlazonosítót, ezért fiókváltáskor nem nyitja meg a korábban használt fiók fájlját.
+
+Ha az alkalmazás újratelepítése után a fájlazonosító elveszik, a program megpróbálja megtalálni a korábban létrehozott, `ÓraNapló – Egészségadatok` nevű táblázatot a Google Drive-ban. Ehhez a Google Cloud-projektben a **Google Drive API** is engedélyezendő. Az alap létrehozás/megnyitás ettől függetlenül működik az elmentett azonosítóval.
