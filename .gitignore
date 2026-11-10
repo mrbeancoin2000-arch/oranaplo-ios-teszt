@@ -1,0 +1,21 @@
+logs/
+output/
+build/
+Payload/
+*.ipa
+*.xcuserstate
+.DS_Store
+*.xcodeproj
+__pycache__/
+*.pyc
+*.log
+# Do not commit health data or private account credentials
+*.p12
+*.mobileprovision
+*.pem
+*.key
+*.p8
+personal_health_*
+
+# Local user configuration must stay on Windows; generated Swift/Info.plist are uploaded.
+google_oauth.json
