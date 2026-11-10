@@ -18,8 +18,8 @@ struct WorkoutExport {
         let heart = (try? await reader.heartSamples(from: workout.startDate, to: workout.endDate)) ?? []
         let heartValues = heart.map(\.1)
         let avg = heartValues.isEmpty ? "" : String(heartValues.reduce(0,+)/Double(heartValues.count))
-        let minHR = heartValues.min().map(String.init) ?? ""
-        let maxHR = heartValues.max().map(String.init) ?? ""
+        let minHR = heartValues.min().map { String(describing: $0) } ?? ""
+        let maxHR = heartValues.max().map { String(describing: $0) } ?? ""
         let distance = workout.totalDistance?.doubleValue(for: .meter()) ?? 0
         let kcal = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie()) ?? 0
         var notes = ""
@@ -65,8 +65,8 @@ func split100m(_ locations: [CLLocation], heart: [(Date,Double)], workout: HKWor
                 index += 1
                 let hrs = heart.filter { $0.0 >= segmentStart && $0.0 <= finish }.map(\.1)
                 let hrAvg = hrs.isEmpty ? "" : String(hrs.reduce(0,+) / Double(hrs.count))
-                let hrMin = hrs.min().map(String.init) ?? ""
-                let hrMax = hrs.max().map(String.init) ?? ""
+                let hrMin = hrs.min().map { String(describing: $0) } ?? ""
+                let hrMax = hrs.max().map { String(describing: $0) } ?? ""
                 let speed = 360.0 / elapsed // 0.1 km / (s / 3600)
                 let pace = elapsed / 6.0     // seconds per 100m -> min/km
                 let segmentID = "segment:\(workout.uuid.uuidString):\(index)"
