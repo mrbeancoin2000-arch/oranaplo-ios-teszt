@@ -140,7 +140,13 @@ try {
  if ($diagnosticExit -eq 0) {
   Write-Output "IPA ellenorzes reszletei: $diagnosticDirectory\ipa-verification.txt"
   $diagnosticPath = Join-Path $diagnosticDirectory 'ipa-verification.txt'
-  if (Test-Path -LiteralPath $diagnosticPath) { Get-Content -LiteralPath $diagnosticPath | ForEach-Object { Write-Output $_ } }
+  foreach ($name in @('build-inputs.txt','plist-normalize.txt','ipa-verification.txt')) {
+   $diagnosticPath = Join-Path $diagnosticDirectory $name
+   if (Test-Path -LiteralPath $diagnosticPath) {
+    Write-Output "=== $name ==="
+    Get-Content -LiteralPath $diagnosticPath | ForEach-Object { Write-Output $_ }
+   }
+  }
  }
  if ($watchExit -ne 0) {
   New-Item -ItemType Directory -Force -Path $buildLogDirectory | Out-Null

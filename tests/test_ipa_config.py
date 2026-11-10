@@ -79,5 +79,26 @@ class IPAInfoTests(unittest.TestCase):
         self.assertIn(client, swift)
         self.assertIn(data['ios_bundle_id'], swift)
 
+    def test_xcodegen_does_not_overwrite_plist_and_entitlements(self):
+        # Previous failure: XcodeGen target `info.path` regenerated Info.plist
+        # without the custom Google and HealthKit keys. The same happens to
+        # entitlements when using `entitlements.path` without `properties`.
+        spec = (ROOT/'project.yml').read_text(encoding='utf-8')
+        self.assertIn('INFOPLIST_FILE: ios/Resources/Info.plist', spec)
+        self.assertIn('CODE_SIGN_ENTITLEMENTS: ios/Resources/OraNaplo.entitlements', spec)
+        import re
+        self.assertNotRegex(spec, r'(?m)^\s+info:\s*$')
+        self.assertNotRegex(spec, r'(?m)^\s+entitlements:\s*$')
+
+    def test_preflight_healthkit_google_config(self):
+        from importlib.util import spec_from_file_location, module_from_spec
+        sp = spec_from_file_location('check_build_inputs', ROOT/'tools/check_build_inputs.py')
+        m = module_from_spec(sp)
+        sp.loader.exec_module(m)
+        self.assertEqual(m.validate(ROOT), [])
+        import plistlib
+        ent = plistlib.loads((ROOT/'ios/Resources/OraNaplo.entitlements').read_bytes())
+        self.assertIs(ent.get('com.apple.developer.healthkit'), True)
+
 
 if __name__ == '__main__': unittest.main()

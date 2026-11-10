@@ -1,6 +1,6 @@
 # ÓraNapló – iPhone / Apple Health → saját Google Sheets (Windows projekt)
 
-**Állapot: fejlesztői prototípus, nem igazoltan működő iPhone-alkalmazás.** A forráskódot helyben szintaktikailag ellenőriztük, de **Xcode-dal nem fordítottuk és iPhone-on nem teszteltük**. A GitHub Actions-alapú fordítás hiba esetén Xcode-naplót ad. Ez NEM ígéret arra, hogy a Sideloadly ingyenes aláírás HealthKit-hozzáférést fog biztosítani.
+**Állapot: fejlesztői prototípus.** Korábbi verziója sikeresen lefordult és iPhone-on megnyílt, de a Google OAuth és a HealthKit hozzáférés még nem működik megbízhatóan. A mostani 0.3.4 változat valós Xcode-fordítása még ellenőrzésre szorul. A GitHub Actions-alapú fordítás hiba esetén Xcode-naplót ad. Ez NEM ígéret arra, hogy a Sideloadly ingyenes aláírás HealthKit-hozzáférést fog biztosítani.
 
 ## Melyik fájlt indítsam Windowson?
 
@@ -40,3 +40,9 @@ Küldd el a **`logs/setup_...log`**, **`logs/build_...log`** vagy a GitHub Actio
 1. Helyi BAT ellenőrzések → 2. GitHub macOS fordítás → 3. Sideloadly aláírás → 4. HealthKit engedélyezési képernyő → 5. Google OAuth → 6. 1 nap adat export → 7. 1 GPS-es futás 100 m szakaszok.
 
 Részletek: `docs/TELEPITES_IPHONE.md`.
+
+## 0.3.4 – Google / HealthKit Info.plist javítás
+
+A korábbi XcodeGen `info.path` (és `entitlements.path`) beállítás **felülírta** a forrás plist fájlokat macOS-en, mert nem volt `properties` megadva. A `project.yml` most `INFOPLIST_FILE` és `CODE_SIGN_ENTITLEMENTS` használatával közvetlenül a változatlan forrásfájlokra mutat. A workflow az `xcodegen generate` után külön ellenőrzi a Google/HealthKit adatait **még az Xcode-fordítás előtt**. A `plist-normalize.txt` és `build-inputs.txt` a hibákhoz mostantól letölthető.
+
+Az ingyenes Sideloadly aláírás továbbra sem garantálja a HealthKit entitlementet. Sem az Apple, sem a Google részéről nem történt éles jóváhagyás. A Cloud build sikerének ellenőrzését az ügyfél Windows-gépén kell végrehajtani.

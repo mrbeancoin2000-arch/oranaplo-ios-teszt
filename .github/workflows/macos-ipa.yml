@@ -28,6 +28,11 @@ jobs:
           # Google iOS client settings already generated on Windows before upload.
           # Do not run configure.py here: absent google_oauth.json would reset to demo ID.
           xcodegen generate --spec project.yml
+      - name: Check Google and HealthKit metadata after XcodeGen
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/check_build_inputs.py 2>&1 | tee build-inputs.txt
       - name: Unsigned build
         shell: bash
         run: |
@@ -36,8 +41,10 @@ jobs:
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
       - name: Normalize unsigned app Info.plist
+        shell: bash
         run: |
-          python3 tools/fix_built_plist.py build/Build/Products/Debug-iphoneos/OraNaplo.app/Info.plist
+          set -o pipefail
+          python3 tools/fix_built_plist.py build/Build/Products/Debug-iphoneos/OraNaplo.app/Info.plist 2>&1 | tee plist-normalize.txt
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload
@@ -53,7 +60,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ipa-diagnostics
-          path: ipa-verification.txt
+          path: |
+            build-inputs.txt
+            plist-normalize.txt
+            ipa-verification.txt
           if-no-files-found: ignore
           retention-days: 7
       - name: Upload IPA
@@ -71,6 +81,8 @@ jobs:
           path: |
             xcodebuild.log
             project.yml
+            build-inputs.txt
+            plist-normalize.txt
             ipa-verification.txt
           if-no-files-found: ignore
           retention-days: 7
