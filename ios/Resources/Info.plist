@@ -36,9 +36,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>A kért egészségadatokat a saját Google Sheets-fájljába mentjük; nem küldjük azokat az ÓraNapló szervereire.</string>
+	<string>Az engedelyezett egeszsegadatokat a sajat Google Sheets-fajlodba mentjuk; a szolgaltato szervereire nem kuldjuk.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>Az alkalmazás nem ír egészségadatot. Kizárólag olvasási jogosultságot kér.</string>
+	<string>Az alkalmazas nem ir Apple Egeszseg-adatokat; csak olvasi engedelyt ker.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

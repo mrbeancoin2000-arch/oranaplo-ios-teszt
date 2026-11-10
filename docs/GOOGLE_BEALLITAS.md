@@ -23,3 +23,7 @@ Hivatalos leírások:
 - https://developers.google.com/identity/sign-in/ios/start-integrating
 - https://developers.google.com/workspace/sheets/api/scopes
 - https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets/create
+
+
+## 2026-11-10 – Beállítási figyelmeztetés
+Ez a teljes projekt már tartalmazhatja a korábban megadott **nyilvános** `google_oauth.json` beállításokat. Ne töröld, amikor új ZIP-et bontasz ki. Ha a Google Cloudban másik OAuth klienst hoztál létre, ugyanitt frissítsd az ID-t és a telepített Sideloadly Bundle ID-t. A `configure.py` demó-beállítással nem enged buildet.

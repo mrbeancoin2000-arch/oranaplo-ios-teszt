@@ -22,8 +22,13 @@ $python = $null
 if (HasExe 'py') { $python='py'; $pArgs=@('-3') } elseif (HasExe 'python') { $python='python'; $pArgs=@() }
 if (-not $python) { Write-Output 'Python telepitve, de az uj PATH meg nem latszik. Inditsd ujra a terminalt.'; exit 12 }
 & $python @pArgs --version
+if (-not (Test-Path 'google_oauth.json')) {
+ Write-Output 'HIBA: NINCS google_oauth.json! A demo mod nem alkalmas Google bejelentkezesre.'
+ Write-Output 'Az OAuth konfiguraciot a google_oauth.example.json sablon alapjan allitsd be.'
+ exit 13
+}
 & $python @pArgs tools/configure.py
-if ($LASTEXITCODE -ne 0) { exit 13 }
+if ($LASTEXITCODE -ne 0) { Write-Output 'HIBA: a Google iOS OAuth konfiguracio hibas. Nem keszitunk hibas IPA-t.'; exit 13 }
 & $python @pArgs -m unittest discover -s tests -p 'test_*.py' -v
 if ($LASTEXITCODE -ne 0) { exit 14 }
 Write-Output 'Helyi tesztek sikeresek. GitHub-auth az elso felhobuild soran lesz.'

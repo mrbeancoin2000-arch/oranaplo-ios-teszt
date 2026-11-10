@@ -35,13 +35,27 @@ jobs:
           xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
             -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+      - name: Normalize unsigned app Info.plist
+        run: |
+          python3 tools/fix_built_plist.py build/Build/Products/Debug-iphoneos/OraNaplo.app/Info.plist
       - name: Package unsigned IPA
         run: |
           mkdir -p Payload
           cp -R build/Build/Products/Debug-iphoneos/OraNaplo.app Payload/
           zip -qry OraNaplo-UNSIGNED.ipa Payload
       - name: Verify IPA configuration
-        run: python3 tools/verify_ipa.py OraNaplo-UNSIGNED.ipa
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/verify_ipa.py OraNaplo-UNSIGNED.ipa 2>&1 | tee ipa-verification.txt
+      - name: Upload IPA diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ipa-diagnostics
+          path: ipa-verification.txt
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload IPA
         if: success()
         uses: actions/upload-artifact@v4
@@ -57,5 +71,6 @@ jobs:
           path: |
             xcodebuild.log
             project.yml
+            ipa-verification.txt
           if-no-files-found: ignore
           retention-days: 7

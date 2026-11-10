@@ -128,20 +128,40 @@ Write-Output "GitHub Actions run: $run"
 & gh run watch $run --repo $fullRepo --exit-status
 $watchExit=$LASTEXITCODE
 New-Item -ItemType Directory -Force -Path output | Out-Null
+# Every workflow uses its own download directory to avoid stale-file conflicts.
+$diagnosticDirectory = Join-Path 'output' ("diagnostics-$run")
+$buildLogDirectory = Join-Path 'output' ("build-logs-$run")
+$prevErrorActionPreference = $ErrorActionPreference
+try {
+ $ErrorActionPreference = 'Continue'
+ New-Item -ItemType Directory -Force -Path $diagnosticDirectory | Out-Null
+ & gh run download $run --repo $fullRepo --name ipa-diagnostics --dir $diagnosticDirectory 2>$null
+ $diagnosticExit = $LASTEXITCODE
+ if ($diagnosticExit -eq 0) {
+  Write-Output "IPA ellenorzes reszletei: $diagnosticDirectory\ipa-verification.txt"
+  $diagnosticPath = Join-Path $diagnosticDirectory 'ipa-verification.txt'
+  if (Test-Path -LiteralPath $diagnosticPath) { Get-Content -LiteralPath $diagnosticPath | ForEach-Object { Write-Output $_ } }
+ }
+ if ($watchExit -ne 0) {
+  New-Item -ItemType Directory -Force -Path $buildLogDirectory | Out-Null
+  & gh run download $run --repo $fullRepo --name build-logs --dir $buildLogDirectory 2>$null
+  if ($LASTEXITCODE -eq 0) { Write-Output "Build naplo: $buildLogDirectory\xcodebuild.log" }
+ }
+} finally { $ErrorActionPreference = $prevErrorActionPreference }
+
 if ($watchExit -ne 0) {
  Write-Output "GitHub Actions futas sikertelen: https://github.com/$fullRepo/actions/runs/$run"
- Write-Output 'Ha nincs lepeshistoria / build-logs artifact, a runner valoszinuleg nem indult el (GitHub infrastruktura).'
- Write-Output 'Ha xcodebuild.log keletkezett, abban a tenyleges Swift/Xcode forditasi hiba olvashato.'
- # The runner may fail before any step runs; that case creates no artifacts.
- $prevErrorActionPreference = $ErrorActionPreference
- try {
-  $ErrorActionPreference = 'Continue'
-  & gh run view $run --repo $fullRepo --json jobs --jq '.jobs[] | [.name, .conclusion, (.steps | length)] | @tsv'
-  & gh run download $run --repo $fullRepo --name build-logs --dir 'output\build-logs' 2>$null
- } finally { $ErrorActionPreference = $prevErrorActionPreference }
- throw 'GitHub Actions futas sikertelen (runner foglalasi vagy Xcode forditasi hiba; ellenorizd a GitHub annotations es steps reszt)'
+ Write-Output 'Ha a Verify IPA configuration lepese piros, az ipa-verification.txt irja le a pontos hibas mezot.'
+ Write-Output 'Ha az Unsigned build lepese piros, az xcodebuild.log a relevans naplo.'
+ throw 'Github Actions build sikertelen: ellenorizd a fent kiirt pontos hibauzenetet.'
 }
-& gh run download $run --repo $fullRepo --name OraNaplo-unsigned-ipa --dir output
+# Download the successful IPA into a run-specific folder, then replace output IPA.
+$ipaDirectory = Join-Path 'output' ("ipa-$run")
+New-Item -ItemType Directory -Force -Path $ipaDirectory | Out-Null
+& gh run download $run --repo $fullRepo --name OraNaplo-unsigned-ipa --dir $ipaDirectory
 if ($LASTEXITCODE -ne 0) { throw 'IPA letoltes hiba' }
+$downloadedIPA = Join-Path $ipaDirectory 'OraNaplo-UNSIGNED.ipa'
+if (-not (Test-Path -LiteralPath $downloadedIPA)) { throw "A letoltott IPA hianyzik: $downloadedIPA" }
+Copy-Item -LiteralPath $downloadedIPA -Destination 'output\OraNaplo-UNSIGNED.ipa' -Force
 Write-Output 'Kesz: output\OraNaplo-UNSIGNED.ipa (NEM ALAIRT)'
 Write-Output 'Kovetkezo: 03_SIDELOADLY_MEGNYITAS.bat, ingyenes Apple ID 7 napos korlatokkal.'
