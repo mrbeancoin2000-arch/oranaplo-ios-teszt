@@ -3,7 +3,7 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 class ProjectTests(unittest.TestCase):
     def test_files(self):
-        for p in ['project.yml','ios/Sources/HealthReader.swift','ios/Sources/GoogleSheets.swift','ios/Sources/WorkoutExport.swift','.github/workflows/macos-ipa.yml']:
+        for p in ['project.yml','ios/Sources/HealthReader.swift','ios/Sources/GoogleSheets.swift','ios/Sources/WorkoutExport.swift','.github/workflows/macos-ipa.yml','ios/Sources/HealthAuthorizationBridge.m','ios/Sources/OraNaplo-Bridging-Header.h','tools/verify_ipa.py']:
             self.assertTrue((ROOT/p).exists(),p)
     def test_metric_catalog(self):
         catalog=(ROOT/'ios/Sources/Models.swift').read_text(encoding='utf-8')

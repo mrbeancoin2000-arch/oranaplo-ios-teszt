@@ -40,6 +40,8 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Debug-iphoneos/OraNaplo.app Payload/
           zip -qry OraNaplo-UNSIGNED.ipa Payload
+      - name: Verify IPA configuration
+        run: python3 tools/verify_ipa.py OraNaplo-UNSIGNED.ipa
       - name: Upload IPA
         if: success()
         uses: actions/upload-artifact@v4

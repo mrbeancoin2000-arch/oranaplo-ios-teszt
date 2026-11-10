@@ -25,8 +25,25 @@ final class HealthReader {
             types.insert(HKSeriesType.workoutRoute())
             types.insert(HKObjectType.electrocardiogramType())
         }
-        CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: requestAuthorization meghívása" : "HealthKit teljes: requestAuthorization meghívása")
-        try await store.requestAuthorization(toShare: [], read: types)
+        // Runtime preflight: the Xcode source plist alone is not proof that the
+        // IPA or Sideloadly-re-signed app still contains these privacy strings.
+        for key in ["NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"] {
+            let purpose = (Bundle.main.object(forInfoDictionaryKey: key) as? String ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !purpose.isEmpty else {
+                CrashCheckpoint.mark("HealthKit megállítva: hiányzik a telepített appból: \(key)")
+                throw SyncError.config("HealthKit engedélykérés nem indítható: a telepített app Info.plist fájljából hiányzik: \(key)")
+            }
+        }
+        CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: biztonságos engedélykérés indul" : "HealthKit teljes: biztonságos engedélykérés indul")
+        // Catch NSException in Objective-C; it cannot be caught by Swift do/catch.
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            HealthAuthorizationBridge.requestAuthorization(store: store, readTypes: types) { success, error in
+                if let error { continuation.resume(throwing: error) }
+                else if success { continuation.resume(returning: ()) }
+                else { continuation.resume(throwing: SyncError.config("HealthKit engedélykérés nem sikerült")) }
+            }
+        }
         CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: engedélykérés visszatért" : "HealthKit teljes: engedélykérés visszatért")
     }
 

@@ -1,3 +1,4 @@
 {
-  "ios_client_id": "ADD_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com"
+  "ios_client_id": "ADD_GOOGLE_IOS_CLIENT_ID.apps.googleusercontent.com",
+  "ios_bundle_id": "hu.oranaplo.ios"
 }

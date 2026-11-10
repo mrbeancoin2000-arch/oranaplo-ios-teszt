@@ -36,9 +36,9 @@ final class GoogleAccount: ObservableObject {
             CrashCheckpoint.mark("Google: hibás visszairányítási URL-séma")
             throw SyncError.config("A telepített app Google URL-sémája eltér. Elvárt: \(expectedScheme). Új Google-konfiguráció és IPA-fordítás szükséges.")
         }
-        guard let bundleID = Bundle.main.bundleIdentifier, bundleID == "hu.oranaplo.ios" else {
+        guard let bundleID = Bundle.main.bundleIdentifier, bundleID == AppConfig.googleBundleID else {
             CrashCheckpoint.mark("Google: Sideloadly által módosított bundle ID")
-            throw SyncError.config("Az alkalmazás azonosítója eltér a Google OAuth-ban beállított hu.oranaplo.ios azonosítótól (telepítve: \(Bundle.main.bundleIdentifier ?? "ismeretlen")). A Sideloadly beállításait ellenőrizni kell.")
+            throw SyncError.config("Az iPhone-ra telepített app azonosítója (\(Bundle.main.bundleIdentifier ?? "ismeretlen")) eltér a Google iOS OAuth-ban beállított azonosítótól (\(AppConfig.googleBundleID)). Készíts iOS OAuth klienst a telepített azonosítóhoz, majd frissítsd a google_oauth.json fájlt és építs új IPA-t.")
         }
         guard let controller = UIViewController.topMost else {
             throw SyncError.config("Nem található bejelentkezési ablak")

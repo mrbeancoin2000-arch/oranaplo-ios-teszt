@@ -81,7 +81,7 @@ try {
   @('.bat','.md') -contains $_.Extension.ToLowerInvariant()
  } | ForEach-Object { Add-Approved $_.Name }
  Add-ByExtension '.github\workflows' @('.yml','.yaml') $false
- Add-ByExtension 'ios\Sources' @('.swift') $true
+ Add-ByExtension 'ios\Sources' @('.swift','.m','.h') $true
  Add-Approved 'ios\Resources\Info.plist'
  Add-Approved 'ios\Resources\OraNaplo.entitlements'
  Add-ByExtension 'ios\Resources\Assets.xcassets' @('.json','.png','.jpg','.jpeg') $true

@@ -78,7 +78,7 @@ struct ContentView: View {
                             Button { Task { await engine.authorizeHealth() } } label: { buttonLabel("Apple Egészség alapteszt (pulzus)", "heart.text.square", secondary: true) }
                             Button { Task { await engine.authorizeAllHealth() } } label: { buttonLabel("Teljes HealthKit engedélykérés", "heart.circle", secondary: true) }
                                 .disabled(!engine.basicHealthFlowCompleted)
-                            Text("Először a pulzus tesztet indítsd. Ingyenes Sideloadly-aláírásnál a HealthKit jogosultság hiányozhat.")
+                            Text(engine.basicHealthFlowCompleted ? "A pulzusteszt sikeres volt. Most már kérheted a többi HealthKit-adatot is." : "A teljes HealthKit-gomb csak sikeres pulzusteszt után használható. Ingyenes Sideloadly-aláírásnál a jogosultság hiányozhat.")
                                 .font(.caption).foregroundStyle(.white.opacity(0.58))
                             Button { Task { await engine.login() } } label: { buttonLabel(engine.account.loggedIn ? "Google: \(engine.account.email)" : "Google-fiók csatlakoztatása", "person.crop.circle") }
                             if engine.account.loggedIn {
@@ -146,9 +146,11 @@ struct ContentView: View {
                             section("Diagnosztika (adatmentés nélkül)", icon: "stethoscope")
                             Text("Utolsó lépés: \(CrashCheckpoint.last)")
                                 .font(.caption).foregroundStyle(.white.opacity(0.7))
+                            Text(CrashCheckpoint.environmentSummary)
+                                .font(.caption2).foregroundStyle(.white.opacity(0.58))
                             Button("Diagnosztika másolása") {
                                 let currentID = Bundle.main.bundleIdentifier ?? "ismeretlen"
-                                UIPasteboard.general.string = "ÓraNapló diagnosztika\nApp ID: \(currentID)\nUtolsó lépés: \(CrashCheckpoint.last)"
+                                UIPasteboard.general.string = "ÓraNapló diagnosztika\nApp ID: \(currentID)\nUtolsó lépés: \(CrashCheckpoint.last)\n\(CrashCheckpoint.environmentSummary)"
                             }.font(.subheadline.weight(.medium)).foregroundStyle(accent)
                         }
                     }
