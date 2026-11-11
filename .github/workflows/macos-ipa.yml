@@ -59,7 +59,7 @@ jobs:
       - name: Unsigned iOS simulator build with real Apple SDK
         shell: bash
         run: |
-          # The helper runs: xcodebuild -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO
+          # The helper selects the destination; Xcode chooses the correct iOS + watchOS SDKs.
           bash tools/ci_xcode_build.sh simulator
       - name: Check Google and HealthKit metadata after XcodeGen
         shell: bash
@@ -69,7 +69,7 @@ jobs:
       - name: Unsigned build
         shell: bash
         run: |
-          # The helper runs: xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO
+          # The helper uses the iOS device destination without overriding the watchOS target SDK.
           bash tools/ci_xcode_build.sh iphone
       - name: Blocking watchOS simulator build
         shell: bash

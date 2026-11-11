@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
+# Each target resolves its own platform SDK. Never force -sdk for a combined iOS + watchOS scheme.
 # One separate log per phase, only true Swift diagnostics are highlighted on failure.
 set -uo pipefail
 MODE="${1:-simulator}"
 SCHEME=OraNaplo
 if [[ "$MODE" == "simulator" ]]; then
-  SDK=iphonesimulator; DEST='generic/platform=iOS Simulator'; LOG=xcodebuild-simulator.log; DERIVED=build-simulator
+  DEST='generic/platform=iOS Simulator'; LOG=xcodebuild-simulator.log; DERIVED=build-simulator
 elif [[ "$MODE" == "watch" ]]; then
-  SDK=watchsimulator; DEST='generic/platform=watchOS Simulator'; LOG=xcodebuild-watchsimulator.log; DERIVED=build-watch
+  DEST='generic/platform=watchOS Simulator'; LOG=xcodebuild-watchsimulator.log; DERIVED=build-watch
   SCHEME=OraNaploWatch
 else
-  SDK=iphoneos; DEST='generic/platform=iOS'; LOG=xcodebuild.log; DERIVED=build
+  DEST='generic/platform=iOS'; LOG=xcodebuild.log; DERIVED=build
 fi
 echo "[ÓraNapló CI] Starting $MODE: $(date -u +%FT%TZ)"
 xcodebuild -quiet -project OraNaplo.xcodeproj -scheme "$SCHEME" -configuration Debug \
-  -sdk "$SDK" -destination "$DEST" -derivedDataPath "$DERIVED" \
+  -destination "$DEST" -derivedDataPath "$DERIVED" \
   CODE_SIGNING_ALLOWED=NO build > "$LOG" 2>&1 &
 pid=$!
 start=$SECONDS

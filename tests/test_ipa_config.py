@@ -90,8 +90,12 @@ class IPAInfoTests(unittest.TestCase):
 
     def test_project_configuration_matches_google_json(self):
         import json
-        data = json.loads((ROOT/'google_oauth.json').read_text(encoding='utf-8'))
+        # CI reconstructs the public OAuth metadata. Unit tests must also work
+        # on a freshly unpacked project without the user's local JSON file.
         plist = plistlib.loads((ROOT/'ios/Resources/Info.plist').read_bytes())
+        config = ROOT/'google_oauth.json'
+        data = json.loads(config.read_text(encoding='utf-8')) if config.is_file() else {
+            'ios_client_id': plist['GIDClientID'], 'ios_bundle_id': 'hu.oranaplo.ios'}
         client = data['ios_client_id']
         self.assertEqual(plist['GIDClientID'], client)
         schemes = [s for t in plist['CFBundleURLTypes'] for s in t['CFBundleURLSchemes']]

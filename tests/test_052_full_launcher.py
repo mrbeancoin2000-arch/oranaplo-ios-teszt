@@ -21,7 +21,12 @@ class OneButtonReleaseTests(unittest.TestCase):
             (dest/'ios/Sources').mkdir(parents=True)
             (dest/'ios/Resources').mkdir(parents=True)
             shutil.copy2(ROOT/'ios/Resources/Info.plist',dest/'ios/Resources/Info.plist')
-            shutil.copy2(ROOT/'google_oauth.json',dest/'google_oauth.json')
+            public = plistlib.loads((ROOT/'ios/Resources/Info.plist').read_bytes())
+            # Public Client ID only; no developer secrets are needed for a unit test.
+            (dest/'google_oauth.json').write_text(json.dumps({
+                'ios_client_id': public['GIDClientID'],
+                'ios_bundle_id': 'hu.oranaplo.ios',
+            }),encoding='utf-8')
             module.ROOT=dest
             module.CONFIG=dest/'google_oauth.json'
             src=plistlib.loads((dest/'ios/Resources/Info.plist').read_bytes())
@@ -44,7 +49,12 @@ class OneButtonReleaseTests(unittest.TestCase):
             (dest/'ios/Sources').mkdir(parents=True)
             (dest/'ios/Resources').mkdir(parents=True)
             shutil.copy2(ROOT/'ios/Resources/Info.plist',dest/'ios/Resources/Info.plist')
-            shutil.copy2(ROOT/'google_oauth.json',dest/'google_oauth.json')
+            public = plistlib.loads((ROOT/'ios/Resources/Info.plist').read_bytes())
+            # Public Client ID only; no developer secrets are needed for a unit test.
+            (dest/'google_oauth.json').write_text(json.dumps({
+                'ios_client_id': public['GIDClientID'],
+                'ios_bundle_id': 'hu.oranaplo.ios',
+            }),encoding='utf-8')
             module.ROOT=dest
             module.CONFIG=dest/'google_oauth.json'
             p=dest/'ios/Resources/Info.plist'
@@ -88,7 +98,7 @@ class OneButtonReleaseTests(unittest.TestCase):
 
     def test_one_mac_run_compiles_simulator_and_iphoneos(self):
         ci=(ROOT/'.github/workflows/macos-ipa.yml').read_text(encoding='utf8')
-        for marker in ['tools/prepayment_audit.py','-sdk iphonesimulator','-sdk iphoneos',
+        for marker in ['tools/prepayment_audit.py','ci_xcode_build.sh simulator','ci_xcode_build.sh iphone',
                        'xcodebuild-simulator.log','ipa-verification.txt','prepayment-run.log']:
             self.assertIn(marker,ci)
 

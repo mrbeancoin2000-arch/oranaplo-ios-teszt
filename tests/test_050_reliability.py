@@ -79,7 +79,7 @@ class ReadinessTests(unittest.TestCase):
         self.assertFalse(bad,str(bad))
     def test_signed_build_is_not_falsely_claimed(self):
         existing=(R/'.github/workflows/macos-ipa.yml').read_text(encoding='utf8')
-        self.assertIn('CODE_SIGNING_ALLOWED=NO',existing)
+        self.assertIn('CODE_SIGNING_ALLOWED=NO',(R/'tools/ci_xcode_build.sh').read_text(encoding='utf8'))
         self.assertIn('UNSIGNED',existing)
         self.assertIn('healthkit_distribution_signed_and_tested', (R/'release_manifest.json').read_text(encoding='utf8'))
 
