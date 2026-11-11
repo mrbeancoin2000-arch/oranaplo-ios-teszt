@@ -6,10 +6,15 @@ import CoreLocation
 struct RunTrackerView: View {
     @ObservedObject private var tracker = RunTracker.shared
     @ObservedObject private var premium = SubscriptionManager.shared
+    @ObservedObject private var watch = WatchBridge.shared
     @EnvironmentObject private var engine: SyncEngine
     @AppStorage("oranaplo.app.language") private var languageCode = "hu"
     @State private var camera: MapCameraPosition = .automatic
     @State private var manualWeight = ""
+    @State private var weeklyGoalText = ""
+    @State private var shareCardURL: URL?
+    @State private var shareCardError = ""
+    @State private var generatingCard = false
     @State private var showDeleteConfirmation = false
     @State private var exportMessageKey = ""
     private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .hu }
@@ -26,6 +31,8 @@ struct RunTrackerView: View {
                     header
                     mapCard
                     metrics
+                    goalsAndRecords
+                    watchStatus
                     controls
                     if let run = tracker.current, tracker.phase == .finished {
                         finished(run)
@@ -43,6 +50,10 @@ struct RunTrackerView: View {
                 .frame(maxWidth:650)
                 .frame(maxWidth:.infinity)
             }.scrollIndicators(.hidden)
+        }
+        .onAppear {
+            let stored=UserDefaults.standard.double(forKey:"oranaplo.run.weeklyGoalKM")
+            weeklyGoalText = String(format:"%.0f",stored > 0 ? stored : 15)
         }
         .onChange(of: tracker.current?.id) { _, _ in camera = .automatic }
         .onChange(of: tracker.routeCoordinates.count) { _, count in
@@ -144,6 +155,64 @@ struct RunTrackerView: View {
         .frame(maxWidth:.infinity,minHeight:74,alignment:.leading)
         .padding(14).background(card,in:RoundedRectangle(cornerRadius:17))
     }
+    private var watchStatus: some View {
+        VStack(alignment:.leading,spacing:8) {
+            Label(t("run.watch.title"),systemImage:"applewatch").font(.headline)
+            Text(t(watch.reachable ? "watch.status.connected" : "watch.status.disconnected"))
+                .foregroundStyle(watch.reachable ? Color.green : Color.orange)
+                .font(.caption)
+            if let date = watch.lastWatchUpdate,
+               Date().timeIntervalSince(date) < 30,
+               let bpm = watch.watchBPM {
+                Text(String(format:"%.0f bpm · %@",bpm,
+                    date.formatted(date:.omitted,time:.shortened))).font(.headline)
+            }
+            Text(t("run.watch.note")).font(.caption2).foregroundStyle(.white.opacity(0.60))
+        }.padding(15).frame(maxWidth:.infinity,alignment:.leading)
+            .background(card,in:RoundedRectangle(cornerRadius:20))
+    }
+    private var goalsAndRecords: some View {
+        let summary=tracker.weeklySummary
+        return VStack(alignment:.leading,spacing:12) {
+            Label(t("run.goals.title"),systemImage:"target").font(.headline)
+            Text(String(format:"%.2f / %.0f km",summary.weeklyMeters/1000,summary.weeklyGoalMeters/1000))
+                .font(.system(size:23,weight:.bold,design:.rounded))
+            ProgressView(value:summary.weeklyGoalMeters > 0
+                         ? min(1,summary.weeklyMeters/summary.weeklyGoalMeters) : 0)
+                .tint(blue)
+            HStack {
+                Label("\(summary.weeklyStreak) \(t("run.goals.streak"))",systemImage:"flame.fill")
+                Spacer()
+                Text(String(format:"%@ %.1f km",t("run.goals.monthly"),summary.monthlyMeters/1000))
+            }.font(.caption).foregroundStyle(.white.opacity(0.75))
+            HStack {
+                Text(t("run.goals.weeklyTarget")).font(.subheadline)
+                TextField("15",text:$weeklyGoalText).keyboardType(.decimalPad)
+                    .frame(width:65).multilineTextAlignment(.trailing)
+                    .padding(8).background(Color.black.opacity(0.18),in:RoundedRectangle(cornerRadius:9))
+                Text("km").font(.caption)
+                Button(t("run.goals.save")) {
+                    if let value=Double(weeklyGoalText.replacingOccurrences(of:",",with:".")),
+                       (1...500).contains(value) {
+                        UserDefaults.standard.set(value,forKey:"oranaplo.run.weeklyGoalKM")
+                        tracker.weeklyGoalChanged()
+                    }
+                }.font(.caption.bold())
+            }
+            if !tracker.personalRecords.isEmpty {
+                Text(t("run.pr.title")).font(.headline)
+                ForEach(tracker.personalRecords) { record in
+                    HStack {
+                        Text(record.distanceMeters == 21_097 ? "21.097 km" :
+                             "\(record.distanceMeters/1000) km")
+                        Spacer()
+                        Text(RunFormatting.duration(record.seconds)).fontWeight(.semibold)
+                    }.font(.caption)
+                }
+            }
+        }.padding(15).frame(maxWidth:.infinity,alignment:.leading)
+            .background(card,in:RoundedRectangle(cornerRadius:20))
+    }
     private var controls: some View {
         VStack(alignment:.leading,spacing:12) {
             if tracker.phase == .ready || tracker.phase == .finished {
@@ -165,6 +234,7 @@ struct RunTrackerView: View {
                     let manual = Double(manualWeight.replacingOccurrences(of:",",with:"."))
                     let valid = (manual ?? 0) >= 20 && (manual ?? 0) <= 400 ? manual : nil
                     tracker.configureProfile(kilograms:valid ?? engine.profile?.weightKG,centimeters:engine.profile?.heightCM)
+                    watch.command("start")
                     tracker.requestPermissionAndStart(kilograms:valid ?? engine.profile?.weightKG,
                         centimeters:engine.profile?.heightCM)
                 } label: { Label(t("run.start"),systemImage:"play.fill")
@@ -173,13 +243,13 @@ struct RunTrackerView: View {
             } else {
                 HStack(spacing:12) {
                     if tracker.phase == .recording {
-                        Button { tracker.pause() } label: { Label(t("run.pause"),systemImage:"pause.fill")
+                        Button { tracker.pause(); watch.command("pause") } label: { Label(t("run.pause"),systemImage:"pause.fill")
                             .frame(maxWidth:.infinity).padding(15).background(Color.orange.opacity(0.9),in:RoundedRectangle(cornerRadius:13)) }
                     } else {
-                        Button { tracker.resume() } label: { Label(t("run.resume"),systemImage:"play.fill")
+                        Button { tracker.resume(); watch.command("resume") } label: { Label(t("run.resume"),systemImage:"play.fill")
                             .frame(maxWidth:.infinity).padding(15).background(Color.green.opacity(0.9),in:RoundedRectangle(cornerRadius:13)) }
                     }
-                    Button { tracker.finish() } label: { Label(t("run.stop"),systemImage:"stop.fill")
+                    Button { tracker.finish(); watch.command("stop") } label: { Label(t("run.stop"),systemImage:"stop.fill")
                         .frame(maxWidth:.infinity).padding(15).background(Color.red.opacity(0.85),in:RoundedRectangle(cornerRadius:13)) }
                 }.foregroundStyle(.white).font(.system(size:14,weight:.bold))
             }
@@ -207,6 +277,15 @@ struct RunTrackerView: View {
                     .frame(maxWidth:.infinity).padding(12).background(Color.white.opacity(0.08),in:RoundedRectangle(cornerRadius:12))
             }
             .disabled(tracker.heartLoading)
+            if !tracker.recentlyBrokenRecords.isEmpty && tracker.current?.id == run.id {
+                VStack(alignment:.leading,spacing:7) {
+                    Text(t("run.pr.new")).font(.headline).foregroundStyle(blue)
+                    ForEach(tracker.recentlyBrokenRecords) { record in
+                        Text("\(record.distanceMeters)m · \(RunFormatting.duration(record.seconds))")
+                            .font(.subheadline).foregroundStyle(.white)
+                    }
+                }
+            }
             if !run.splits.isEmpty {
                 HStack {
                     Text(t("run.splits.title")).font(.headline)
@@ -232,6 +311,31 @@ struct RunTrackerView: View {
             } else {
                 Text(t("run.splits.waiting")).font(.caption).foregroundStyle(.white.opacity(0.7))
             }
+            Button {
+                generatingCard = true
+                shareCardError = ""
+                Task {
+                    do { shareCardURL = try await RunShareCard.create(run,language:language) }
+                    catch { shareCardError = error.localizedDescription }
+                    generatingCard = false
+                }
+            } label: {
+                Label(t("run.share.card.create"),systemImage:"photo")
+                    .frame(maxWidth:.infinity).padding(12)
+                    .background(Color.white.opacity(0.1),in:RoundedRectangle(cornerRadius:12))
+            }.disabled(generatingCard)
+            if let shareCardURL {
+                ShareLink(item:shareCardURL) {
+                    Label(t("run.share.card.share"),systemImage:"square.and.arrow.up")
+                        .frame(maxWidth:.infinity).padding(12)
+                        .background(blue,in:RoundedRectangle(cornerRadius:12))
+                        .foregroundStyle(.black)
+                }
+            }
+            if !shareCardError.isEmpty {
+                Text(shareCardError).font(.caption).foregroundStyle(.orange)
+            }
+            Text(t("run.share.privacy")).font(.caption2).foregroundStyle(.white.opacity(0.6))
             if let url=tracker.gpxURL(for:run) {
                 ShareLink(item:url) {
                     Label(t("run.share.gpx"),systemImage:"square.and.arrow.up")

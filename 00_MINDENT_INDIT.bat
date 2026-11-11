@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-title OraNaplo 0.5.3 - MINDEN EGY INDITASSAL
+title OraNaplo 0.5.4 - MINDEN EGY INDITASSAL
 color 1F
 set "ORANAPLO_FROM_ALL=1"
 set "PYTHONUTF8=1"
@@ -11,7 +11,7 @@ for /f %%T in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd_HHmmss
 if not defined STAMP set "STAMP=manual_%RANDOM%"
 set "RUNLOG=%CD%\logs\MINDENT_INDIT_%STAMP%.log"
 set "STAGE=inditas"
-echo OraNaplo 0.5.3 - teljes egygombos folyamat > "!RUNLOG!"
+echo OraNaplo 0.5.4 - teljes egygombos folyamat > "!RUNLOG!"
 echo Log: !RUNLOG!
 echo ==============================================================
 echo ORANAPLO - EGYGOMBOS WINDOWS ELLENORZES + iOS IPA BUILD

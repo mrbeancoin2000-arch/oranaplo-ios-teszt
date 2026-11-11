@@ -1,0 +1,64 @@
+name: OraNaplo
+options:
+  bundleIdPrefix: hu.oranaplo
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 9.2.0
+targets:
+  OraNaplo:
+    type: application
+    platform: iOS
+    sources:
+      - path: ios/Sources
+      - path: ios/Resources
+    settings:
+      base:
+        # These are SOURCE files. Never use XcodeGen `info:` / `entitlements:`
+        # without properties, as it overwrites the plist and entitlement files.
+        INFOPLIST_FILE: ios/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: ios/Resources/OraNaplo.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: hu.oranaplo.ios
+        SWIFT_VERSION: "5.9"
+        SWIFT_OBJC_BRIDGING_HEADER: ios/Sources/OraNaplo-Bridging-Header.h
+        IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+    dependencies:
+      - package: GoogleSignIn
+      - target: OraNaploWatch
+        embed: true
+
+  OraNaploWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: watchOS/Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: hu.oranaplo.ios.watchkitapp
+        INFOPLIST_FILE: watchOS/Info.plist
+        CODE_SIGN_ENTITLEMENTS: watchOS/OraNaploWatch.entitlements
+        GENERATE_INFOPLIST_FILE: NO
+        SWIFT_VERSION: "5.9"
+        WATCHOS_DEPLOYMENT_TARGET: "11.0"
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  OraNaploWatch:
+    build:
+      targets:
+        OraNaploWatch: all
+    run:
+      config: Debug
+  OraNaplo:
+    build:
+      targets:
+        OraNaplo: all
+    run:
+      config: Debug

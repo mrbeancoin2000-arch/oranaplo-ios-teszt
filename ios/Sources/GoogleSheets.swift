@@ -151,7 +151,7 @@ struct SheetsAPI {
         let data = try await request("POST", "", body: ["properties": ["title": "ÓraNapló – Egészségadatok"], "sheets": sheets])
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String:Any], let id = obj["spreadsheetId"] as? String else { throw SyncError.config("Nem érkezett táblázatazonosító") }
         var ranges: [[String:Any]] = Catalog.sheets.map { sheet in
-            let header = sheet == "ElemzesBeallitasok" ? Catalog.analysisSettingsHeader : (sheet == "Profil" ? Catalog.profileHeader : (sheet == "Megfigyelesek" ? Catalog.observationHeader : (sheet == "100m" ? Catalog.segmentHeader : (sheet == "Edzesek" ? Catalog.workoutHeader : Catalog.rawHeader))))
+            let header = sheet == "ElemzesBeallitasok" ? Catalog.analysisSettingsHeader : (sheet == "Profil" ? Catalog.profileHeader : (sheet == "Megfigyelesek" ? Catalog.observationHeader : (sheet == "100m" ? Catalog.segmentHeader : (sheet == "Edzesek" ? Catalog.workoutHeader : (sheet == "Rekordok" ? Catalog.recordHeader : (sheet == "Celok" ? Catalog.goalHeader : (sheet == "Dashboard" ? ["ÓraNapló · FUTÁS DASHBOARD"] : Catalog.rawHeader)))))))
             return ["range": "'\(sheet)'!A1", "values": [header]]
         }
         ranges.append(["range": "'ElemzesBeallitasok'!A2", "values": [
@@ -159,6 +159,10 @@ struct SheetsAPI {
             ["napi_cel_ml", "", "Saját naplózási cél; orvosi ajánlásként nem használható"]
         ]])
         _ = try await request("POST", "/\(id)/values:batchUpdate", body: ["valueInputOption":"RAW", "data":ranges])
+        // The spreadsheet is already created. Never lose its ID if chart formatting
+        // is rejected due to an API permission/quota/transient failure.
+        do { try await styleDashboard(sheetID:id, initial:true) }
+        catch { print("ÓraNapló dashboard formatting deferred: \(error.localizedDescription)") }
         return id
     }
     /// Upgrade spreadsheets created before the profile/observation feature.
@@ -169,7 +173,7 @@ struct SheetsAPI {
         let existing = Set((object["sheets"] as? [[String: Any]] ?? []).compactMap { sheet -> String? in
             (sheet["properties"] as? [String: Any])?["title"] as? String
         })
-        let required = ["Profil", "Megfigyelesek", "ElemzesBeallitasok"]
+        let required = ["Profil", "Megfigyelesek", "ElemzesBeallitasok", "Dashboard", "Rekordok", "Celok"]
         let missing = required.filter { !existing.contains($0) }
         if missing.isEmpty {
             try await ensureRunSplitColumns(sheetID:sheetID)
@@ -179,7 +183,9 @@ struct SheetsAPI {
         _ = try await request("POST", "/\(sheetID):batchUpdate", body: ["requests": operations])
         var updates: [[String: Any]] = missing.map { tab in
             let header = tab == "Profil" ? Catalog.profileHeader :
-                (tab == "Megfigyelesek" ? Catalog.observationHeader : Catalog.analysisSettingsHeader)
+                (tab == "Megfigyelesek" ? Catalog.observationHeader :
+                (tab == "Rekordok" ? Catalog.recordHeader : (tab == "Celok" ? Catalog.goalHeader :
+                (tab == "Dashboard" ? ["ÓraNapló · FUTÁS DASHBOARD"] : Catalog.analysisSettingsHeader))))
             return ["range": "'\(tab)'!A1", "values": [header]]
         }
         if missing.contains("ElemzesBeallitasok") {
@@ -191,6 +197,10 @@ struct SheetsAPI {
         _ = try await request("POST", "/\(sheetID)/values:batchUpdate",
                               body: ["valueInputOption": "RAW", "data": updates])
         try await ensureRunSplitColumns(sheetID:sheetID)
+        if missing.contains("Dashboard") {
+            do { try await styleDashboard(sheetID:sheetID, initial:false) }
+            catch { print("ÓraNapló dashboard formatting deferred: \(error.localizedDescription)") }
+        }
     }
 
     /// Migration for 0.5.1: preserve existing columns A:N and add step/calorie
@@ -198,6 +208,104 @@ struct SheetsAPI {
     private func ensureRunSplitColumns(sheetID: String) async throws {
         _ = try await request("PUT", "/\(sheetID)/values/'100m'!O1:P1?valueInputOption=RAW",
                               body: ["values": [["lepes_100m_becsult", "kaloria_kcal_becsult"]]])
+    }
+
+    /// Create a ready-to-use dashboard only once; never overwrite a customized one.
+    private func styleDashboard(sheetID: String, initial: Bool) async throws {
+        func weeklyFormula(_ row: Int) -> String {
+            #"=IFERROR(SUM(ARRAYFORMULA(VALUE(FILTER(Edzesek!G$2:G,LEFT(Edzesek!C$2:C,10)>=A\#(row),LEFT(Edzesek!C$2:C,10)<TEXT(DATEVALUE(A\#(row))+7,"yyyy-mm-dd"),REGEXMATCH(LOWER(Edzesek!B$2:B),"fut")))))/1000,0)"#
+        }
+        func speedFormula(_ row: Int) -> String {
+            #"=IFERROR(AVERAGE(ARRAYFORMULA(VALUE(FILTER('100m'!H$2:H,LEFT('100m'!E$2:E,10)>=A\#(row),LEFT('100m'!E$2:E,10)<TEXT(DATEVALUE(A\#(row))+7,"yyyy-mm-dd"))))),0)"#
+        }
+        var weekly: [[String]] = [["HETI FUTÓTÁV", "km", "100 m átlag km/h"]]
+        for row in 12...19 {
+            let dateFormula = row == 12
+                ? #"=TEXT(TODAY()-WEEKDAY(TODAY(),2)+1-49,"yyyy-mm-dd")"#
+                : #"=TEXT(DATEVALUE(A\#(row-1))+7,"yyyy-mm-dd")"#
+            weekly.append([dateFormula, weeklyFormula(row), speedFormula(row)])
+        }
+        let metricRows: [[String]] = [
+            ["MUTATÓ", "ÉRTÉK", "EGYSÉG"],
+            ["Heti futótáv", #"=IFERROR(SUM(ARRAYFORMULA(VALUE(FILTER(Edzesek!G2:G, REGEXMATCH(LOWER(Edzesek!B2:B),"fut"), LEFT(Edzesek!C2:C,10)>=TEXT(TODAY()-WEEKDAY(TODAY(),2)+1,"yyyy-mm-dd")))))/1000,0)"#, "km"],
+            ["Havi futótáv", #"=IFERROR(SUM(ARRAYFORMULA(VALUE(FILTER(Edzesek!G2:G, REGEXMATCH(LOWER(Edzesek!B2:B),"fut"), LEFT(Edzesek!C2:C,7)=TEXT(TODAY(),"yyyy-mm")))))/1000,0)"#, "km"],
+            ["Összes edzés", "=COUNTA(Edzesek!A2:A)", "db"],
+            ["100 m szakaszok", "=COUNTA('100m'!A2:A)", "db"]
+        ]
+        let heartRows: [[String]] = [
+            ["PULZUS (bpm)", "MINTÁK"],
+            ["< 100", #"=COUNTIF(Pulzus!E2:E,"<100")"#],
+            ["100–119", #"=COUNTIFS(Pulzus!E2:E,">=100",Pulzus!E2:E,"<120")"#],
+            ["120–139", #"=COUNTIFS(Pulzus!E2:E,">=120",Pulzus!E2:E,"<140")"#],
+            ["140–159", #"=COUNTIFS(Pulzus!E2:E,">=140",Pulzus!E2:E,"<160")"#],
+            ["160+", #"=COUNTIF(Pulzus!E2:E,">=160")"#]
+        ]
+        let data: [[String:Any]] = [
+            ["range":"'Dashboard'!A1", "values":[["ÓraNapló | FUTÁS & EGÉSZSÉG"]]],
+            ["range":"'Dashboard'!A2", "values":[["Saját adataid a saját Google Drive-odon"]]],
+            ["range":"'Dashboard'!A4", "values":metricRows],
+            ["range":"'Dashboard'!A11", "values":weekly],
+            ["range":"'Dashboard'!E11", "values":heartRows],
+            ["range":"'Dashboard'!A21", "values":[["A pulzuscsoportok nem orvosi diagnózisok vagy személyes edzészónák."]]]
+        ]
+        _ = try await request("POST", "/\(sheetID)/values:batchUpdate", body:["valueInputOption":"USER_ENTERED", "data":data])
+        let raw = try await request("GET", "/\(sheetID)?fields=sheets.properties(sheetId,title)")
+        let obj = try JSONSerialization.jsonObject(with:raw) as? [String:Any] ?? [:]
+        let props = (obj["sheets"] as? [[String:Any]] ?? []).compactMap { $0["properties"] as? [String:Any] }
+        guard let dashID = props.first(where:{$0["title"] as? String == "Dashboard"})?["sheetId"] as? Int else { return }
+        func rgb(_ red: Double,_ green: Double,_ blue: Double) -> [String:Double] {
+            ["red":red,"green":green,"blue":blue]
+        }
+        let ink=rgb(0.035,0.067,0.11), steel=rgb(0.10,0.17,0.25)
+        let accent=rgb(0.29,0.66,0.93), white=rgb(0.96,0.98,1)
+        var requests: [[String:Any]] = [
+            ["updateSheetProperties":["properties":["sheetId":dashID,"gridProperties":["hideGridlines":true,"frozenRowCount":2],"index":0],"fields":"gridProperties.hideGridlines,gridProperties.frozenRowCount,index"]],
+            ["repeatCell":["range":["sheetId":dashID,"startRowIndex":0,"endRowIndex":35,"startColumnIndex":0,"endColumnIndex":9],"cell":["userEnteredFormat":["backgroundColor":ink,"textFormat":["foregroundColor":white,"fontSize":11]]],"fields":"userEnteredFormat"]],
+            ["repeatCell":["range":["sheetId":dashID,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":9],"cell":["userEnteredFormat":["backgroundColor":steel,"textFormat":["foregroundColor":white,"fontSize":20,"bold":true]]],"fields":"userEnteredFormat"]],
+            ["repeatCell":["range":["sheetId":dashID,"startRowIndex":3,"endRowIndex":4,"startColumnIndex":0,"endColumnIndex":3],"cell":["userEnteredFormat":["backgroundColor":steel,"textFormat":["foregroundColor":accent,"bold":true]]],"fields":"userEnteredFormat"]],
+            ["updateDimensionProperties":["range":["sheetId":dashID,"dimension":"COLUMNS","startIndex":0,"endIndex":1],"properties":["pixelSize":210],"fields":"pixelSize"]],
+            ["updateDimensionProperties":["range":["sheetId":dashID,"dimension":"COLUMNS","startIndex":1,"endIndex":9],"properties":["pixelSize":140],"fields":"pixelSize"]]
+        ]
+        func chart(_ title:String, _ kind:String, _ domain:Int, _ value:Int,
+                   _ anchor:Int, _ first:Int, _ last:Int) -> [String:Any] {
+            func range(_ column:Int) -> [String:Any] {
+                ["sources":[["sheetId":dashID,"startRowIndex":first,"endRowIndex":last,
+                             "startColumnIndex":column,"endColumnIndex":column+1]]]
+            }
+            let basic: [String:Any] = ["chartType":kind,"legendPosition":"NO_LEGEND","headerCount":1,
+                "domains":[["domain":["sourceRange":range(domain)]]],
+                "series":[["series":["sourceRange":range(value)],"targetAxis":"LEFT_AXIS","color":accent]]]
+            let position: [String:Any] = ["overlayPosition":["anchorCell":["sheetId":dashID,
+                "rowIndex":(title.hasPrefix("Pulzus") ? 43 : 24),"columnIndex":anchor],"widthPixels":480,"heightPixels":250]]
+            return ["addChart":["chart":["spec":["title":title,"basicChart":basic],"position":position]]]
+        }
+        requests.append(chart("Heti megtett kilométer", "COLUMN", 0, 1, 0, 10, 19))
+        requests.append(chart("100 m átlagsebesség", "LINE", 0, 2, 4, 10, 19))
+        requests.append(chart("Pulzusminták eloszlása", "COLUMN", 4, 5, 0, 10, 17))
+        _ = try await request("POST", "/\(sheetID):batchUpdate",body:["requests":requests])
+    }
+
+    /// Write the long-term on-device record and goal archive, not just the limited
+    /// recent GPS tracks kept for local route previews.
+    func updateRunAchievements(sheetID: String, records: [RunPersonalRecord], goals: RunGoalSummary) async throws {
+        let time = ISO.string(Date())
+        let recordsRows = [Catalog.recordHeader] + records.map { r in
+            ["record:\(r.distanceMeters)",String(r.distanceMeters),String(r.seconds),r.runID.uuidString,ISO.string(r.recorded),"GPS-alapú, csak összefüggő útvonal"]
+        }
+        // Always clear up to four former PR rows when an older record disappears,
+        // e.g. after deleting a run or revoking history. A shorter values update
+        // alone would leave stale records visible below the refreshed range.
+        let cleanRecords = recordsRows + Array(repeating: [String](repeating: "", count: Catalog.recordHeader.count),
+                                               count: max(0, 1 + RunInsights.distances.count - recordsRows.count))
+        let goalRows = [Catalog.goalHeader,
+            ["weekly_km",String(goals.weeklyMeters/1000),time],
+            ["monthly_km",String(goals.monthlyMeters/1000),time],
+            ["weekly_goal_km",String(goals.weeklyGoalMeters/1000),time],
+            ["weekly_streak",String(goals.weeklyStreak),time],
+            ["active_days_this_week",String(goals.activeDaysThisWeek),time]]
+        _ = try await request("POST", "/\(sheetID)/values:batchUpdate",body:["valueInputOption":"RAW","data":[
+            ["range":"'Rekordok'!A1","values":cleanRecords],
+            ["range":"'Celok'!A1","values":goalRows]]])
     }
 
     /// Explicit opt-in: place only age (not birthdate), biological sex, height and weight

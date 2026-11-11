@@ -57,11 +57,8 @@ jobs:
       - name: Unsigned iOS simulator build with real Apple SDK
         shell: bash
         run: |
-          set -o pipefail
-          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build-simulator CODE_SIGNING_ALLOWED=NO \
-            build 2>&1 | tee xcodebuild-simulator.log
+          # The helper runs: xcodebuild -sdk iphonesimulator CODE_SIGNING_ALLOWED=NO
+          bash tools/ci_xcode_build.sh simulator
       - name: Check Google and HealthKit metadata after XcodeGen
         shell: bash
         run: |
@@ -70,10 +67,8 @@ jobs:
       - name: Unsigned build
         shell: bash
         run: |
-          set -o pipefail
-          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
-            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild.log
+          # The helper runs: xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO
+          bash tools/ci_xcode_build.sh iphone
       - name: Normalize unsigned app Info.plist
         shell: bash
         run: |
@@ -107,6 +102,16 @@ jobs:
           name: OraNaplo-unsigned-ipa
           path: OraNaplo-UNSIGNED.ipa
           retention-days: 7
+      # Non-blocking watchOS target audit. A passing phone IPA does NOT imply
+      # watchOS capability/signing or watch-app embedding has been verified.
+      - name: watchOS companion source and target compile audit
+        if: success()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodegen generate --spec project.watch.yml
+          bash tools/ci_xcode_build.sh watch
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
@@ -115,6 +120,7 @@ jobs:
           path: |
             xcodebuild.log
             xcodebuild-simulator.log
+            xcodebuild-watchsimulator.log
             prepayment-run.log
             logs/prepayment_*/RESULT.json
             logs/prepayment_*/JELENTES.html

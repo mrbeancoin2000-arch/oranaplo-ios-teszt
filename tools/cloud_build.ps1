@@ -76,7 +76,7 @@ try {
   }
  }
  # Explicit upload allowlist: do not push arbitrary files from customers' PCs.
- @('.gitignore','project.yml','google_oauth.example.json','release_manifest.json') | ForEach-Object { Add-Approved $_ }
+ @('.gitignore','project.yml','project.watch.yml','google_oauth.example.json','release_manifest.json') | ForEach-Object { Add-Approved $_ }
  Get-ChildItem -LiteralPath $projectRoot -File -Force | Where-Object {
   @('.bat','.md') -contains $_.Extension.ToLowerInvariant()
  } | ForEach-Object { Add-Approved $_.Name }
@@ -86,7 +86,8 @@ try {
  Add-Approved 'ios\Resources\OraNaplo.entitlements'
  Add-ByExtension 'ios\Resources' @('.strings','.stringsdict','.xcstrings') $true
  Add-ByExtension 'ios\Resources\Assets.xcassets' @('.json','.png','.jpg','.jpeg') $true
- Add-ByExtension 'tools' @('.ps1','.py') $false
+ Add-ByExtension 'tools' @('.ps1','.py','.sh') $false
+ Add-ByExtension 'watchOS' @('.swift','.plist','.entitlements') $true
  Add-ByExtension 'tests' @('.py','.html','.swift','.js','.xml','.json','.storekit') $true
  Add-ByExtension 'scripts' @('.gs','.js','.json') $true
  Add-ByExtension 'website' @('.html','.css','.js','.svg','.txt') $true
@@ -202,7 +203,21 @@ try {
  if ($watchExit -ne 0) {
   New-Item -ItemType Directory -Force -Path $buildLogDirectory | Out-Null
   & gh run download $run --repo $fullRepo --name build-logs --dir $buildLogDirectory 2>$null
-  if ($LASTEXITCODE -eq 0) { Write-Output "Build naplo: $buildLogDirectory\xcodebuild.log" }
+  if ($LASTEXITCODE -eq 0) {
+   Write-Output "Build naplo: $buildLogDirectory\xcodebuild.log"
+   # The last 50 lines in GitHub failed-steps logs usually hide the actual Swift error.
+   # Surface the FIRST compiler diagnostics from full raw logs instead.
+   foreach ($logname in @('xcodebuild-simulator.log','xcodebuild.log')) {
+    $sourceLog = Join-Path $buildLogDirectory $logname
+    if (Test-Path -LiteralPath $sourceLog) {
+     $matches = @(Select-String -LiteralPath $sourceLog -Pattern '(^|\s)(error:|fatal error:|\*\* BUILD FAILED)' | Select-Object -First 35)
+     if ($matches.Count -gt 0) {
+      Write-Output "=== XCODE HIBAK: $logname ==="
+      $matches | ForEach-Object { Write-Output ("Sor {0}: {1}" -f $_.LineNumber,$_.Line) }
+     }
+    }
+   }
+  }
   $failedStepsLog = Join-Path $buildLogDirectory 'github-failed-steps.log'
   & gh run view $run --repo $fullRepo --log-failed 2>$null | Out-File -LiteralPath $failedStepsLog -Encoding utf8
   if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $failedStepsLog)) {

@@ -56,6 +56,9 @@ if shutil.which('swiftc'):
     run_binary=OUT/('run-math-core-test.exe' if platform.system()=='Windows' else 'run-math-core-test')
     step('Running GPS split core compilation',['swiftc','-O','ios/Sources/RunMathCore.swift','tests/runtime_run_main.swift','-o',str(run_binary)])
     if run_binary.exists(): step('Running GPS split core runtime',[str(run_binary)])
+    insight_binary=OUT/('run-insights-test.exe' if platform.system()=='Windows' else 'run-insights-test')
+    step('PR and streak core compilation',['swiftc','-O','ios/Sources/RunMathCore.swift','ios/Sources/RunInsightsCore.swift','tests/runtime_insights_main.swift','-o',str(insight_binary)])
+    if insight_binary.exists(): step('PR and streak core runtime',[str(insight_binary)])
 else:
     steps.append({'name':'Running GPS split core runtime','status':'SKIPPED','required':False,
                   'explanation':'Swift compiler unavailable; macOS GitHub Actions must run this',
@@ -77,7 +80,7 @@ shortcuts={
 necessary_failed=any(x['status']=='FAIL' and x.get('required',True) for x in steps)
 run_skips=[x['name'] for x in steps if x['status']=='SKIPPED']
 report={
- 'project':'OraNaplo 0.5.3',
+ 'project':'OraNaplo 0.5.4',
  'created_utc':dt.datetime.now(dt.timezone.utc).isoformat(),
  'platform':{'os':platform.platform(),'python':sys.version.split()[0],'swift_compiler':shutil.which('swiftc'),'node':shutil.which('node')},
  'result':'PREPAYMENT_CHECKS_FAILED' if necessary_failed else ('LOCAL_PASS_SWIFT_MACOS_PENDING' if run_skips else 'LOCAL_PREPAYMENT_CHECKS_PASSED'),
@@ -92,7 +95,7 @@ report={
 css='''body{font:15px system-ui;background:#0b1422;color:#e5eefc;max-width:1000px;margin:40px auto;padding:0 20px}h1{color:#8ab9fd}.p{color:#75d4a3}.f{color:#ff9292}.s{color:#ffd37e}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #354155;text-align:left}code{color:#a9cfff}a{color:#91bfff}aside{padding:15px;border:1px solid #566075;border-radius:12px;background:#192433}'''
 rows=''.join(f'<tr><td>{html.escape(x["name"])}</td><td class="{ "p" if x["status"]=="PASS" else "f" if x["status"]=="FAIL" else "s" }">{x["status"]}</td><td>{html.escape(x.get("explanation", ""))}</td><td><code>{html.escape(x.get("log", ""))}</code></td></tr>' for x in steps)
 readiness=''.join(f'<tr><td>{html.escape(k)}</td><td>{"Prepared" if v else "NOT VERIFIED / POST-PAYMENT"}</td></tr>' for k,v in shortcuts.items())
-page=f'''<!doctype html><html lang="hu"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ÓraNapló 0.5.3 – Tesztjelentés</title><style>{css}</style><h1>ÓraNapló 0.5.3 – Fizetés előtti tesztek</h1><p><b>{report['result']}</b><br>{report['created_utc']}</p><aside>Fontos: A zöld helyi tesztek nem igazolják az App Store-kiadhatóságot. Nem történt valódi HealthKit-engedélyezés, aláírt iOS-fordítás, Google-fiókos feltöltés vagy Apple-vásárlás. A minták szintetikusak.</aside><h2>Lefutott ellenőrzések</h2><table><tr><th>Vizsgálat</th><th>Eredmény</th><th>Magyarázat</th><th>Napló</th></tr>{rows}</table><h2>Éles kiadás feltételei</h2><table>{readiness}</table><h2>Következő lépések</h2><ol>{''.join('<li>'+html.escape(s)+'</li>' for s in report['next_required'])}</ol></html>'''
+page=f'''<!doctype html><html lang="hu"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ÓraNapló 0.5.4 – Tesztjelentés</title><style>{css}</style><h1>ÓraNapló 0.5.4 – Fizetés előtti tesztek</h1><p><b>{report['result']}</b><br>{report['created_utc']}</p><aside>Fontos: A zöld helyi tesztek nem igazolják az App Store-kiadhatóságot. Nem történt valódi HealthKit-engedélyezés, aláírt iOS-fordítás, Google-fiókos feltöltés vagy Apple-vásárlás. A minták szintetikusak.</aside><h2>Lefutott ellenőrzések</h2><table><tr><th>Vizsgálat</th><th>Eredmény</th><th>Magyarázat</th><th>Napló</th></tr>{rows}</table><h2>Éles kiadás feltételei</h2><table>{readiness}</table><h2>Következő lépések</h2><ol>{''.join('<li>'+html.escape(s)+'</li>' for s in report['next_required'])}</ol></html>'''
 (OUT/'JELENTES.html').write_text(page,encoding='utf8')
 print('\nReport:',OUT/'RESULT.json')
 print('HTML  :',OUT/'JELENTES.html')

@@ -31,6 +31,10 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var stepSegmentStart: Date?
     private var lastCheckpoint = Date.distantPast
     private var pendingStart = false
+    private var lastPowerConfiguration = Date.distantPast
+    @Published private(set) var recentlyBrokenRecords: [RunPersonalRecord] = []
+    @Published private(set) var archivedRecords: [RunPersonalRecord] = []
+    private var longTermRuns: [UUID:RunHistoryEntry] = [:]
 
     private let file: URL = {
         let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -44,7 +48,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.delegate = self
         manager.activityType = .fitness
         manager.desiredAccuracy = kCLLocationAccuracyBest
-        manager.distanceFilter = 3
+        manager.distanceFilter = 4
         manager.pausesLocationUpdatesAutomatically = false
         authorization = manager.authorizationStatus
         load()
@@ -72,10 +76,38 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         return result
     }
     var lastCompleted: RecordedRun? { history.first(where: { $0.completed }) }
+    var personalRecords: [RunPersonalRecord] { archivedRecords.sorted { $0.distanceMeters < $1.distanceMeters } }
+    var weeklySummary: RunGoalSummary {
+        let stored = UserDefaults.standard.double(forKey:"oranaplo.run.weeklyGoalKM")
+        return RunInsights.historicalGoals(Array(longTermRuns.values),weeklyGoalKM:stored > 0 ? stored : 15)
+    }
+    func weeklyGoalChanged() { objectWillChange.send() }
 
     private func load() {
-        guard let bytes = try? Data(contentsOf: file), let runs = try? JSONDecoder().decode([RecordedRun].self, from: bytes) else { return }
+        let runs: [RecordedRun] = (try? Data(contentsOf: file)).flatMap {
+            try? JSONDecoder().decode([RecordedRun].self, from: $0)
+        } ?? []
         history = runs.filter { $0.completed }.sorted { $0.started > $1.started }
+        let archiveFile=file.deletingLastPathComponent().appendingPathComponent("record-archive.json")
+        if let recordData=try? Data(contentsOf:archiveFile),
+           let archived=try? JSONDecoder().decode([RunPersonalRecord].self,from:recordData) {
+            archivedRecords=archived
+        }
+        let summaryFile=file.deletingLastPathComponent().appendingPathComponent("run-summary.json")
+        if let summaryData=try? Data(contentsOf:summaryFile),
+           let entries=try? JSONDecoder().decode([RunHistoryEntry].self,from:summaryData) {
+            longTermRuns=Dictionary(uniqueKeysWithValues:entries.map { ($0.id,$0) })
+        }
+        for run in history {
+            if longTermRuns[run.id] == nil {
+                longTermRuns[run.id]=RunHistoryEntry(id:run.id,started:run.started,gpsMeters:run.gpsMeters)
+            }
+        }
+        for record in RunInsights.records(history) {
+            if let old=archivedRecords.firstIndex(where:{$0.distanceMeters==record.distanceMeters}) {
+                if record.seconds < archivedRecords[old].seconds { archivedRecords[old]=record }
+            } else { archivedRecords.append(record) }
+        }
         if let unfinished = runs.first(where: { !$0.completed }) {
             var snapshot = unfinished
             // Never silently resume GPS recording after a crash or OS termination.
@@ -100,6 +132,13 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
             // Background GPS checkpoints must remain writable after the device is locked,
             // but files stay protected until the first unlock after reboot.
             try data.write(to: file,options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            let routeFree=Array(longTermRuns.values)
+            let summaryFile=file.deletingLastPathComponent().appendingPathComponent("run-summary.json")
+            try JSONEncoder().encode(routeFree).write(to:summaryFile,
+                options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
+            let archiveFile=file.deletingLastPathComponent().appendingPathComponent("record-archive.json")
+            try JSONEncoder().encode(archivedRecords).write(to:archiveFile,
+                options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
         } catch { message = "run.status.saveError" }
     }
     private func checkpoint(force: Bool = false) {
@@ -142,7 +181,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         activeStart = now; accumulated = 0; elapsedNow = 0; stepBase = 0; stepSegmentStart = nil
         lastFix = nil; awaitingFixAfterPause = true; latestSpeedKmh = nil; message = "run.status.recording"
         phase = .recording
-        manager.allowsBackgroundLocationUpdates = true // only while an explicitly started run is active
+        configureActiveGPS() // only while an explicitly started run is active
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
         startPedometer(now)
@@ -181,7 +220,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         current?.activeWindows.append(RunActiveWindow(started:now,ended:nil,secondsBefore:accumulated))
         lastFix = nil; awaitingFixAfterPause = true; latestSpeedKmh = nil
         phase = .recording
-        manager.allowsBackgroundLocationUpdates = true
+        configureActiveGPS()
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
         startPedometer(now)
@@ -200,6 +239,21 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         run.estimatedKcal = RunMath.estimatedRunningKcal(meters: run.gpsMeters,kilograms: run.kilograms)
         current = run
         history.removeAll(where: { $0.id == run.id })
+        // Compare with archived results too, not only the last 25 detailed routes.
+        let candidates=RunInsights.records([run])
+        recentlyBrokenRecords=[]
+        for candidate in candidates {
+            if let i=archivedRecords.firstIndex(where:{$0.distanceMeters==candidate.distanceMeters}) {
+                if candidate.seconds + 0.5 < archivedRecords[i].seconds {
+                    archivedRecords[i]=candidate
+                    recentlyBrokenRecords.append(candidate)
+                }
+            } else {
+                archivedRecords.append(candidate)
+                recentlyBrokenRecords.append(candidate)
+            }
+        }
+        longTermRuns[run.id]=RunHistoryEntry(id:run.id,started:run.started,gpsMeters:run.gpsMeters)
         history.insert(run,at:0)
         history = Array(history.prefix(25))
         phase = .finished
@@ -229,6 +283,15 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     func delete(_ id: UUID) {
         guard phase != .recording && phase != .paused else { return }
         history.removeAll { $0.id == id }
+        longTermRuns.removeValue(forKey:id)
+        if archivedRecords.contains(where:{$0.runID == id}) {
+            archivedRecords.removeAll(where:{$0.runID==id})
+            for candidate in RunInsights.records(history) {
+                if !archivedRecords.contains(where:{$0.distanceMeters==candidate.distanceMeters}) {
+                    archivedRecords.append(candidate)
+                }
+            }
+        }
         if current?.id == id { current = nil; phase = .ready }
         checkpoint(force: true)
     }
@@ -308,6 +371,39 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in self.message = "run.status.gpsUnavailable" }
     }
+    /// Standard continuous GPS is active only during an explicitly started run.
+    /// Avoid switching accuracy on every GPS callback (drains battery).
+    private func configureActiveGPS() {
+        manager.activityType = .fitness
+        manager.desiredAccuracy = kCLLocationAccuracyBest
+        manager.distanceFilter = 4
+        manager.pausesLocationUpdatesAutomatically = false
+        manager.allowsBackgroundLocationUpdates = true
+        lastPowerConfiguration = Date()
+    }
+    private func adaptGPSForPower(speedMetersPerSecond: Double) {
+        guard Date().timeIntervalSince(lastPowerConfiguration) > 50 else { return }
+        lastPowerConfiguration = Date()
+        // Running requires precise fixes; use coarser distanceFilter only for slow movement.
+        if speedMetersPerSecond > 1.2 {
+            manager.desiredAccuracy = kCLLocationAccuracyBest
+            manager.distanceFilter = 4
+        } else {
+            manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
+            manager.distanceFilter = 8
+        }
+    }
+    nonisolated func locationManagerDidPauseLocationUpdates(_ manager: CLLocationManager) {
+        Task { @MainActor in
+            if self.phase == .recording {
+                self.message = "run.status.gpsPaused"
+                self.manager.startUpdatingLocation()
+            }
+        }
+    }
+    nonisolated func locationManagerDidResumeLocationUpdates(_ manager: CLLocationManager) {
+        Task { @MainActor in if self.phase == .recording { self.message = "run.status.recording" } }
+    }
     private func accept(_ point: CLLocation) {
         guard phase == .recording, let activeStart, point.horizontalAccuracy >= 0,
               point.horizontalAccuracy <= 30, abs(point.timestamp.timeIntervalSinceNow) < 25,
@@ -335,6 +431,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
             guard meters >= 3 else { return }
             current?.gpsMeters += meters
             latestSpeedKmh = (meters / delta) * 3.6
+            adaptGPSForPower(speedMetersPerSecond:meters/delta)
             var updated = routePoint
             updated.cumulativeMeters = current?.gpsMeters ?? 0
             updated.breakBefore = false

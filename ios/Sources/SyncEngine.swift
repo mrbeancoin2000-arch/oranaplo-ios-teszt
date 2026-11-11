@@ -270,6 +270,16 @@ final class SyncEngine: ObservableObject {
             pendingCount = await queue.count()
             status = "Futás és 100 m-es szakaszok helyben mentve feltöltésre."
             await prepareGoogleSheet()
+            if !sheetID.isEmpty {
+                do {
+                    try await SheetsAPI(account:account).updateRunAchievements(
+                        sheetID:sheetID,records:RunTracker.shared.personalRecords,
+                        goals:RunTracker.shared.weeklySummary)
+                } catch {
+                    // Do not roll back a successful measurement export because of a dashboard update.
+                    status += " A rekordok/friss célok szinkronja külön nem sikerült: \(error.localizedDescription)"
+                }
+            }
         } catch { status = "Futásexport-hiba: \(error.localizedDescription)" }
     }
 

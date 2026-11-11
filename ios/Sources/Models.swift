@@ -126,12 +126,14 @@ enum Catalog {
         ("taplalkozas", "Táplálkozás"), ("kulso", "Külső mérések")
     ]
     static let freeSampleIdentifier = "HKQuantityTypeIdentifierHeartRate"
-    static let sheets = ["Pulzus", "HRV", "Alvas", "Edzesek", "100m", "Aktivitas", "Sportmeresek", "Test", "Taplalkozas", "KulsoMeresek", "Jelzesek", "EKG", "Akkumulator", "Naplo", "Rendszernaplo", "Profil", "Megfigyelesek", "ElemzesBeallitasok"]
+    static let sheets = ["Pulzus", "HRV", "Alvas", "Edzesek", "100m", "Aktivitas", "Sportmeresek", "Test", "Taplalkozas", "KulsoMeresek", "Jelzesek", "EKG", "Akkumulator", "Naplo", "Rendszernaplo", "Profil", "Megfigyelesek", "ElemzesBeallitasok", "Dashboard", "Rekordok", "Celok"]
     static let rawHeader = ["azonosito", "tipus", "kezdet_UTC", "veg_UTC", "ertek", "egyseg", "forras", "eszkoz", "megjegyzes", "allapot", "mentes_UTC"]
     static let segmentHeader = ["azonosito", "edzes_azonosito", "sport", "szakasz_m", "kezdet_UTC", "veg_UTC", "ido_masodperc", "sebesseg_kmh", "tempo_perc_km", "pulzus_atlag", "pulzus_min", "pulzus_max", "gps_pontossag", "mentes_UTC", "lepes_100m_becsult", "kaloria_kcal_becsult"]
     static let profileHeader = ["mezo", "ertek", "forras", "frissitve_UTC"]
     static let analysisSettingsHeader = ["beallitas", "ertek", "leiras"]
     static let observationHeader = ["azonosito", "jelzes_kod", "meres_UTC", "ertek", "szint", "forras"]
+    static let recordHeader = ["azonosito", "tavolsag_m", "ido_masodperc", "futas_azonosito", "datum_UTC", "megjegyzes"]
+    static let goalHeader = ["mutato", "ertek", "frissitve_UTC"]
     static let workoutHeader = ["azonosito", "sport", "kezdet_UTC", "veg_UTC", "ido_masodperc", "kaloria_kcal", "tavolsag_m", "pulzus_atlag", "pulzus_min", "pulzus_max", "megjegyzes", "mentes_UTC"]
 }
 
