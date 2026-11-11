@@ -29,8 +29,14 @@ final class HealthReader {
             types.insert(HKObjectType.workoutType())
             types.insert(HKSeriesType.workoutRoute())
             types.insert(HKObjectType.electrocardiogramType())
-            types.insert(HKObjectType.characteristicType(forIdentifier: .dateOfBirth))
-            types.insert(HKObjectType.characteristicType(forIdentifier: .biologicalSex))
+            // HealthKit returns optional characteristic types on this SDK.
+            // Insert only types that actually exist; never force unwrap a read permission.
+            if let birthDateType = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {
+                types.insert(birthDateType)
+            }
+            if let biologicalSexType = HKObjectType.characteristicType(forIdentifier: .biologicalSex) {
+                types.insert(biologicalSexType)
+            }
         }
         // Runtime preflight: the Xcode source plist alone is not proof that the
         // IPA or Sideloadly-re-signed app still contains these privacy strings.
@@ -60,10 +66,13 @@ final class HealthReader {
         guard HKHealthStore.isHealthDataAvailable() else {
             throw SyncError.config("Az Apple Egészség nem érhető el ezen a készüléken")
         }
-        var types: Set<HKObjectType> = [
-            HKObjectType.characteristicType(forIdentifier: .dateOfBirth),
-            HKObjectType.characteristicType(forIdentifier: .biologicalSex)
-        ]
+        var types = Set<HKObjectType>()
+        if let birthDateType = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {
+            types.insert(birthDateType)
+        }
+        if let biologicalSexType = HKObjectType.characteristicType(forIdentifier: .biologicalSex) {
+            types.insert(biologicalSexType)
+        }
         let ids: [HKQuantityTypeIdentifier] = [
             .height, .bodyMass, .stepCount, .dietaryWater,
             .bloodPressureSystolic, .bloodPressureDiastolic

@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0"
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
-echo OraNaplo 0.5.2 - Fizetes elotti teljes offline tesztcsomag
+echo OraNaplo 0.5.5 - Fizetes elotti teljes offline tesztcsomag
 where py >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
   py -3 tools\prepayment_audit.py
