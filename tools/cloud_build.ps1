@@ -89,9 +89,9 @@ try {
  Add-ByExtension 'ios\Resources\Assets.xcassets' @('.json','.png','.jpg','.jpeg') $true
  Add-ByExtension 'tools' @('.ps1','.py','.sh') $false
  Add-ByExtension 'watchOS' @('.swift','.plist','.entitlements') $true
- Add-ByExtension 'tests' @('.py','.html','.swift','.js','.xml','.json','.storekit') $true
+ Add-ByExtension 'tests' @('.py','.html','.swift','.js','.mjs','.xml','.json','.storekit') $true
  Add-ByExtension 'scripts' @('.gs','.js','.json') $true
- Add-ByExtension 'supabase' @('.sql','.md') $true
+ Add-ByExtension 'supabase' @('.sql','.md','.ts','.mjs','.toml') $true
  Add-ByExtension 'website' @('.html','.css','.js','.svg','.txt') $true
  Add-ByExtension 'docs' @('.md') $true
  if ($approved.Count -lt 10) { throw "Tulsagosan keves jovahagyott forrasfajl: $($approved.Count)" }

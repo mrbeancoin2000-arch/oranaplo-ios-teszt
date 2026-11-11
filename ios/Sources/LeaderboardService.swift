@@ -59,6 +59,8 @@ final class LeaderboardService:ObservableObject {
     @Published private(set) var messageKey=""
     @Published private(set) var published=UserDefaults.standard.bool(forKey:"oranaplo.ranking.published")
     @Published private(set) var activeMode:RankingMode = .steps
+    @Published private(set) var reportBusy = false
+    @Published private(set) var reportMessageKey = ""
     var isConfigured:Bool { RankingConfig.load?.configured == true }
 
     private func request(_ method:String,path:String,body:Any?=nil,authenticated:Bool=true, extra:[String:String]=[:]) async throws -> (Data,HTTPURLResponse) {
@@ -158,6 +160,31 @@ final class LeaderboardService:ObservableObject {
         } catch { messageKey="leader.error" }
     }
 
+    /// Authenticated submission only. The Supabase Edge Function forwards a
+    /// category-only report to the maintainer's email using a server-side mail key.
+    /// No raw diagnostic log, free-text field, GPS, HealthKit value or Google ID.
+    func submitBugReport(category: SafeSupportPayload.Category, reasonCode: String) async {
+        guard isConfigured else { reportMessageKey = "support.notConfigured"; return }
+        guard !reportBusy else { return }
+        reportBusy=true
+        reportMessageKey="support.sending"
+        defer { reportBusy=false }
+        let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "unknown"
+        let payload=SafeSupportPayload(category:category,reasonCode:reasonCode,version:version)
+        do {
+            let data=try JSONEncoder().encode(payload)
+            guard let body=try JSONSerialization.jsonObject(with:data) as? [String:Any] else {
+                reportMessageKey="support.error";return
+            }
+            _ = try await request("POST",path:"/functions/v1/bug-report",body:body)
+            reportMessageKey="support.sent"
+        } catch let error as NSError {
+            reportMessageKey=error.code==429 ? "support.rateLimited" : "support.error"
+            CrashCheckpoint.mark("report.delivery.failed")
+            SafeDiagnosticTrail.mark(.reportFailed)
+        }
+    }
+
     func revoke() async {
         guard !busy, isConfigured else { messageKey="leader.configure";return }
         busy=true;defer { busy=false }
@@ -169,6 +196,7 @@ final class LeaderboardService:ObservableObject {
             entries.removeAll { $0.user_id == id }
             UserDefaults.standard.set(false,forKey:"oranaplo.ranking.published")
             messageKey="leader.revoked"
+            SafeDiagnosticTrail.mark(.rankDeleted)
             worldRank=nil
         } catch { messageKey="leader.error" }
     }

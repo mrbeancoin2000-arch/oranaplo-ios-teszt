@@ -39,6 +39,7 @@ def step(name,argv,required=True,timeout=240,expected_exit=0):
 
 step('Python project unit tests',[sys.executable,'-m','unittest','discover','-s','tests','-p','test_*.py','-v'])
 step('Apps Script offline runtime',['node','tests/test_042_apps_script.js'],required=False)
+step('Privacy-safe report runtime',['node','--test','tests/test_057_support_policy.mjs'],required=False)
 if shutil.which('swiftc'):
     step('Swift source syntax',['swiftc','-frontend','-parse',*[str(p) for p in sorted((ROOT/'ios/Sources').glob('*.swift'))]])
     runtime=OUT/('offline-core-test.exe' if platform.system()=='Windows' else 'offline-core-test')
@@ -68,6 +69,11 @@ if shutil.which('swiftc'):
     step('Sleep duration core compilation',['swiftc','-O','ios/Sources/SleepAnalysisCore.swift',
          'tests/runtime_sleep_main.swift','-o',str(sleep_binary)])
     if sleep_binary.exists(): step('Sleep duration comparison runtime',[str(sleep_binary)])
+if shutil.which('swiftc'):
+    ops_binary=OUT/('ops-safety-test.exe' if platform.system()=='Windows' else 'ops-safety-test')
+    step('Support and locale Swift compilation',['swiftc','-O','ios/Sources/L10n.swift','ios/Sources/OpsText.swift',
+         'ios/Sources/SafeDiagnosticTrail.swift','ios/Sources/SafeSupportPayload.swift','tests/runtime_ops_main.swift','-o',str(ops_binary)])
+    if ops_binary.exists(): step('Support and locale Swift runtime',[str(ops_binary)])
 step('Draft release metadata check',[sys.executable,'tools/release_preflight.py'])
 # The strict gate MUST fail until post-payment App Store IDs, URL/contact and signing are done.
 step('Production release gate',[sys.executable,'tools/release_preflight.py','--strict'],expected_exit=1)
@@ -80,12 +86,15 @@ shortcuts={
  'App Store Connect subscription approved':False,
  'Live HealthKit sensor read tested':False,
  'Google Sheets end-to-end with user auth tested in this audit':False,
+ 'Public bug-report email successfully delivered (Supabase + Resend)':False,
+ 'Leaderboard row delete tested against real Supabase RLS':False,
+ 'Interrupted workout recovered on real iPhone':False,
  'App Store review approved':False
 }
 necessary_failed=any(x['status']=='FAIL' and x.get('required',True) for x in steps)
 run_skips=[x['name'] for x in steps if x['status']=='SKIPPED']
 report={
- 'project':'OraNaplo 0.5.6',
+ 'project':'OraNaplo 0.6.1',
  'created_utc':dt.datetime.now(dt.timezone.utc).isoformat(),
  'platform':{'os':platform.platform(),'python':sys.version.split()[0],'swift_compiler':shutil.which('swiftc'),'node':shutil.which('node')},
  'result':'PREPAYMENT_CHECKS_FAILED' if necessary_failed else ('LOCAL_PASS_SWIFT_MACOS_PENDING' if run_skips else 'LOCAL_PREPAYMENT_CHECKS_PASSED'),
@@ -100,7 +109,7 @@ report={
 css='''body{font:15px system-ui;background:#0b1422;color:#e5eefc;max-width:1000px;margin:40px auto;padding:0 20px}h1{color:#8ab9fd}.p{color:#75d4a3}.f{color:#ff9292}.s{color:#ffd37e}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #354155;text-align:left}code{color:#a9cfff}a{color:#91bfff}aside{padding:15px;border:1px solid #566075;border-radius:12px;background:#192433}'''
 rows=''.join(f'<tr><td>{html.escape(x["name"])}</td><td class="{ "p" if x["status"]=="PASS" else "f" if x["status"]=="FAIL" else "s" }">{x["status"]}</td><td>{html.escape(x.get("explanation", ""))}</td><td><code>{html.escape(x.get("log", ""))}</code></td></tr>' for x in steps)
 readiness=''.join(f'<tr><td>{html.escape(k)}</td><td>{"Prepared" if v else "NOT VERIFIED / POST-PAYMENT"}</td></tr>' for k,v in shortcuts.items())
-page=f'''<!doctype html><html lang="hu"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ÓraNapló 0.5.6 – Tesztjelentés</title><style>{css}</style><h1>ÓraNapló 0.5.6 – Fizetés előtti tesztek</h1><p><b>{report['result']}</b><br>{report['created_utc']}</p><aside>Fontos: A zöld helyi tesztek nem igazolják az App Store-kiadhatóságot. Nem történt valódi HealthKit-engedélyezés, aláírt iOS-fordítás, Google-fiókos feltöltés vagy Apple-vásárlás. A minták szintetikusak.</aside><h2>Lefutott ellenőrzések</h2><table><tr><th>Vizsgálat</th><th>Eredmény</th><th>Magyarázat</th><th>Napló</th></tr>{rows}</table><h2>Éles kiadás feltételei</h2><table>{readiness}</table><h2>Következő lépések</h2><ol>{''.join('<li>'+html.escape(s)+'</li>' for s in report['next_required'])}</ol></html>'''
+page=f'''<!doctype html><html lang="hu"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>ÓraNapló 0.6.1 – Tesztjelentés</title><style>{css}</style><h1>ÓraNapló 0.6.1 – Fizetés előtti tesztek</h1><p><b>{report['result']}</b><br>{report['created_utc']}</p><aside>Fontos: A zöld helyi tesztek nem igazolják az App Store-kiadhatóságot. Nem történt valódi HealthKit-engedélyezés, aláírt iOS-fordítás, Google-fiókos feltöltés vagy Apple-vásárlás. A minták szintetikusak.</aside><h2>Lefutott ellenőrzések</h2><table><tr><th>Vizsgálat</th><th>Eredmény</th><th>Magyarázat</th><th>Napló</th></tr>{rows}</table><h2>Éles kiadás feltételei</h2><table>{readiness}</table><h2>Következő lépések</h2><ol>{''.join('<li>'+html.escape(s)+'</li>' for s in report['next_required'])}</ol></html>'''
 (OUT/'JELENTES.html').write_text(page,encoding='utf8')
 print('\nReport:',OUT/'RESULT.json')
 print('HTML  :',OUT/'JELENTES.html')

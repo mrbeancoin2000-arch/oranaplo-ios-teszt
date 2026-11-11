@@ -16,6 +16,7 @@ struct RunTrackerView: View {
     @State private var shareCardError = ""
     @State private var generatingCard = false
     @State private var showDeleteConfirmation = false
+    @State private var showDiscardRecovery = false
     @State private var exportMessageKey = ""
     private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .hu }
     private func t(_ key: String) -> String { L10n.t(key,language) }
@@ -29,6 +30,11 @@ struct RunTrackerView: View {
             ScrollView {
                 VStack(alignment:.leading,spacing:18) {
                     header
+                    if tracker.storageDamaged {
+                        Text(OpsText.t("run.recover.damaged",language))
+                            .foregroundStyle(.orange).font(.callout)
+                    }
+                    if tracker.hasInterruptedWorkout { recoveryCard }
                     mapCard
                     metrics
                     goalsAndRecords
@@ -60,12 +66,38 @@ struct RunTrackerView: View {
             guard count >= 1, tracker.phase == .recording, let last = tracker.routeCoordinates.last else { return }
             camera = .region(MKCoordinateRegion(center:last,span:MKCoordinateSpan(latitudeDelta:0.008,longitudeDelta:0.008)))
         }
+        .confirmationDialog(OpsText.t("run.recover.confirm",language),isPresented:$showDiscardRecovery) {
+            Button(OpsText.t("run.recover.discard",language),role:.destructive) {
+                tracker.discardInterruptedWorkout()
+            }
+        }
         .alert(t("run.delete.confirm"),isPresented:$showDeleteConfirmation) {
             Button(t("run.delete"),role:.destructive) {
                 if let run=tracker.current { tracker.delete(run.id) }
             }
             Button(t("run.cancel"),role:.cancel) { }
         } message: { Text(t("run.delete.disclosure")) }
+    }
+
+    private var recoveryCard: some View {
+        VStack(alignment:.leading,spacing:12) {
+            Label(OpsText.t("run.recover.title",language),systemImage:"arrow.uturn.backward.circle.fill")
+                .font(.headline).foregroundStyle(blue)
+            Text(OpsText.t("run.recover.help",language))
+                .font(.footnote).foregroundStyle(.white.opacity(0.8))
+            Button { tracker.resume() } label: {
+                Label(OpsText.t("run.recover.resume",language),systemImage:"play.fill")
+                    .frame(maxWidth:.infinity).padding(13)
+                    .background(blue,in:RoundedRectangle(cornerRadius:12))
+                    .foregroundStyle(.black)
+            }
+            HStack {
+                Button(OpsText.t("run.recover.keep",language)) { tracker.finish() }
+                Spacer()
+                Button(OpsText.t("run.recover.discard",language),role:.destructive) { showDiscardRecovery=true }
+            }.font(.subheadline)
+        }
+        .padding(18).background(card,in:RoundedRectangle(cornerRadius:20))
     }
 
     private var header: some View {

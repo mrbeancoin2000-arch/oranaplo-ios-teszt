@@ -17,26 +17,29 @@ jobs:
         run: |
           set -o pipefail
           python3 tools/prepayment_audit.py 2>&1 | tee prepayment-run.log
-      - name: Generate Xcode project
+      - name: Generate iOS + watchOS companion project
         run: |
           brew install xcodegen
-          xcodegen generate --spec project.yml
-      - name: Unsigned iOS simulator build (real Apple SDK)
+          xcodegen generate --spec project.watch.yml
+      - name: Unsigned iOS simulator build with embedded Watch companion
         shell: bash
         run: |
           set -o pipefail
-          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild-simulator.log
+          bash tools/ci_xcode_build.sh simulator
+      - name: Unsigned watchOS simulator build (blocking)
+        shell: bash
+        run: |
+          set -o pipefail
+          bash tools/ci_xcode_build.sh watch
       - name: Upload test and build logs even on failure
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: OraNaplo-051-prepayment-evidence
+          name: OraNaplo-061-prepayment-evidence
           path: |
             prepayment-run.log
             xcodebuild-simulator.log
+            xcodebuild-watchsimulator.log
             logs/prepayment_*/RESULT.json
             logs/prepayment_*/JELENTES.html
             logs/prepayment_*/*.log

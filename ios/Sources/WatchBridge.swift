@@ -12,6 +12,8 @@ final class WatchBridge: NSObject, ObservableObject {
     @Published private(set) var watchMeters: Double?
     @Published private(set) var watchElapsed: Double?
     @Published private(set) var lastWatchUpdate: Date?
+    @Published private(set) var lastCompletedWatchWorkout: Date?
+    @Published private(set) var lastCompletedWatchWorkoutID = ""
     @Published private(set) var lastWatchMessage = "watch.status.disconnected"
     private var session: WCSession? = WCSession.isSupported() ? WCSession.default : nil
     private override init() {
@@ -35,6 +37,24 @@ final class WatchBridge: NSObject, ObservableObject {
             if let bpm = values["bpm"] as? Double, (25...250).contains(bpm) { watchBPM = bpm }
             if let meters = values["meters"] as? Double, meters >= 0 { watchMeters = meters }
             if let elapsed = values["elapsed"] as? Double, elapsed >= 0 { watchElapsed = elapsed }
+            lastWatchUpdate = Date()
+            lastWatchMessage = "watch.status.connected"
+        case "completed":
+            // transferUserInfo may be redelivered. Persist the receipt ID before
+            // applying the summary; replay must not create multiple workout rows.
+            guard let id = values["id"] as? String, UUID(uuidString: id) != nil,
+                  let meters = values["meters"] as? Double, meters.isFinite, (0...1_000_000).contains(meters),
+                  let elapsed = values["elapsed"] as? Double, elapsed.isFinite, (0...604_800).contains(elapsed) else { return }
+            let key = "oranaplo.watch.received.completed.v1"
+            var received = UserDefaults.standard.stringArray(forKey: key) ?? []
+            guard !received.contains(id) else { return }
+            received.append(id)
+            UserDefaults.standard.set(Array(received.suffix(5000)), forKey: key)
+            watchMeters = meters
+            watchElapsed = elapsed
+            if let bpm = values["bpm"] as? Double, (25...250).contains(bpm) { watchBPM = bpm }
+            lastCompletedWatchWorkoutID = id
+            lastCompletedWatchWorkout = Date(timeIntervalSince1970: (values["ended"] as? Double) ?? Date().timeIntervalSince1970)
             lastWatchUpdate = Date()
             lastWatchMessage = "watch.status.connected"
         case "control":
@@ -67,5 +87,8 @@ extension WatchBridge: WCSessionDelegate {
     nonisolated func sessionDidDeactivate(_ session: WCSession) { session.activate() }
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String:Any]) {
         Task { @MainActor in self.receive(message) }
+    }
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String:Any]) {
+        Task { @MainActor in self.receive(userInfo) }
     }
 }

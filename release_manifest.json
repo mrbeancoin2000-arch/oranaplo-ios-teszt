@@ -12,5 +12,10 @@
   "full_healthkit_e2e_and_sync_tested": false,
   "contact_details_website_live": false,
   "localization_all_languages_reviewed": false,
-  "app_store_submission_approved": false
+  "app_store_submission_approved": false,
+  "google_sheets_account_switch_delete_reimport_e2e_tested": false,
+  "gps_long_run_interruption_and_backup_recovery_tested": false,
+  "supabase_rls_and_leaderboard_delete_tested": false,
+  "bug_report_sends_privacy_safe_email_to_operator_tested": false,
+  "watchos_companion_embedded_signed_and_tested": false
 }

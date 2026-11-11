@@ -16,7 +16,9 @@ class BusinessAndReliabilityTests(unittest.TestCase):
         self.assertIn('freeSampleIdentifier = "HKQuantityTypeIdentifierHeartRate"', catalog)
         self.assertIn('metric.id == Catalog.freeSampleIdentifier', src)
         self.assertIn('restrictToFreeTier()', src)
-        self.assertIn('row.sheet != "Pulzus"', queue)
+        self.assertIn('row.sheet == "Pulzus"', queue)
+        self.assertIn('nextBatch(limit: 150, allowPremium: SubscriptionManager.shared.proActive)', src)
+        self.assertNotIn('pending.removeAll { row in', queue)
         self.assertIn('fullData && enabledGroups.contains("edzes")', src)
 
     def test_import_anchor_scoped_by_account_and_range(self):

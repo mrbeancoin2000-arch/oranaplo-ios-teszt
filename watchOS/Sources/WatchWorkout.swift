@@ -18,6 +18,9 @@ final class WatchWorkout: NSObject, ObservableObject {
     private var pausedSeconds: TimeInterval = 0
     private var clock: Timer?
     private var connect: WCSession? = WCSession.isSupported() ? WCSession.default : nil
+    private var workoutID = UUID().uuidString
+    private static let pendingKey = "oranaplo.watch.pending.completed.v1"
+    private var lastBeat: Double?
     override init() {
         super.init()
         connect?.delegate = self
@@ -40,7 +43,8 @@ final class WatchWorkout: NSObject, ObservableObject {
                 session.delegate = self
                 live.delegate = self
                 workout = session; builder = live
-                meters=0; bpm=nil; elapsed=0; pausedSeconds=0
+                workoutID=UUID().uuidString
+                meters=0; bpm=nil; elapsed=0; pausedSeconds=0; lastBeat=nil
                 beganAt=Date();pausedAt=nil
                 session.startActivity(with:beganAt!)
                 try await live.beginCollection(at:beganAt!)
@@ -69,6 +73,7 @@ final class WatchWorkout: NSObject, ObservableObject {
     func finish() {
         guard phase == .running || phase == .paused else { return }
         if phase == .paused, let pausedAt { pausedSeconds += Date().timeIntervalSince(pausedAt) }
+        if let beganAt { elapsed = max(0, Date().timeIntervalSince(beganAt) - pausedSeconds) }
         clock?.invalidate();clock=nil
         phase = .finishing
         sendControl("stop")
@@ -77,6 +82,7 @@ final class WatchWorkout: NSObject, ObservableObject {
             do {
                 try await builder?.endCollection(at:Date())
                 _ = try await builder?.finishWorkout()
+                sendCompletedWorkout()
                 phase = .finished
             } catch { info = error.localizedDescription; phase = .finished }
         }
@@ -90,6 +96,25 @@ final class WatchWorkout: NSObject, ObservableObject {
                 self.sendMetrics()
             }
         }
+    }
+    // Real-time sendMessage is best effort and stops when the phone is unreachable.
+    // Final summaries also use a durable transfer; never send raw health/GPS traces.
+    private func sendCompletedWorkout() {
+        let payload: [String: Any] = ["kind": "completed", "id": workoutID,
+            "started": (beganAt ?? Date()).timeIntervalSince1970,
+            "ended": Date().timeIntervalSince1970,
+            "meters": meters, "elapsed": max(0, elapsed),
+            "bpm": lastBeat ?? 0]
+        var buffer = UserDefaults.standard.array(forKey: Self.pendingKey) as? [[String:Any]] ?? []
+        buffer.append(payload)
+        UserDefaults.standard.set(buffer, forKey: Self.pendingKey)
+        flushCompletedWorkouts()
+    }
+    private func flushCompletedWorkouts() {
+        guard let connect, connect.activationState == .activated else { return }
+        let buffer = UserDefaults.standard.array(forKey: Self.pendingKey) as? [[String:Any]] ?? []
+        for payload in buffer { connect.transferUserInfo(payload) }
+        UserDefaults.standard.removeObject(forKey: Self.pendingKey)
     }
     private func sendControl(_ action:String) {
         guard let connect, connect.isReachable else { return }
@@ -126,6 +151,7 @@ extension WatchWorkout: HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
             if collectedTypes.contains(heart),
                let q = workoutBuilder.statistics(for:heart)?.mostRecentQuantity() {
                 self.bpm=q.doubleValue(for:HKUnit.count().unitDivided(by:.minute()))
+                self.lastBeat = self.bpm
             }
             let distance = HKQuantityType(.distanceWalkingRunning)
             if collectedTypes.contains(distance),
@@ -137,7 +163,9 @@ extension WatchWorkout: HKWorkoutSessionDelegate, HKLiveWorkoutBuilderDelegate {
     }
 }
 extension WatchWorkout: WCSessionDelegate {
-    nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) { }
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        Task { @MainActor in self.flushCompletedWorkouts() }
+    }
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) { }
     nonisolated func session(_ session: WCSession, didReceiveMessage message:[String:Any]) {
         Task { @MainActor in self.apply(message) }

@@ -18,6 +18,10 @@ enum CrashCheckpoint {
         events.append(event)
         UserDefaults.standard.set(Array(events.suffix(80)), forKey: historyKey)
     }
+    static func eraseHistory() {
+        UserDefaults.standard.removeObject(forKey:key)
+        UserDefaults.standard.removeObject(forKey:historyKey)
+    }
     static var last: String {
         UserDefaults.standard.string(forKey: key) ?? "Még nincs diagnosztikai esemény"
     }

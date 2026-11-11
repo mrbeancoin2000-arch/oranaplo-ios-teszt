@@ -202,6 +202,40 @@ struct AnalysisDashboardView:View {
                         .background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:14))
                 }.disabled(engine.busy || !engine.account.loggedIn)
             }
+            DashCard(title:OpsText.t("sync.title",language),icon:"arrow.triangle.2.circlepath.circle") {
+                HStack(spacing:10) {
+                    DashStat(label:OpsText.t("sync.lastSuccess",language),
+                             value:engine.lastSuccessfulDate?.formatted(date:.abbreviated,time:.shortened) ?? "—")
+                    DashStat(label:OpsText.t("sync.lastAttempt",language),
+                             value:engine.lastAttemptDate?.formatted(date:.abbreviated,time:.shortened) ?? "—")
+                }
+                Divider().overlay(.white.opacity(0.1))
+                HStack {
+                    Text(OpsText.t("sync.pending",language)).foregroundStyle(DashPalette.text)
+                    Spacer()
+                    Text("\(engine.pendingCount)").fontWeight(.bold)
+                }
+                HStack {
+                    Text(OpsText.t("sync.stage",language)).foregroundStyle(DashPalette.text)
+                    Spacer()
+                    Text(OpsText.t("sync.\(engine.syncProgress)",language)).fontWeight(.medium)
+                }
+                HStack {
+                    Text(OpsText.t("sync.failure",language)).foregroundStyle(DashPalette.text)
+                    Spacer()
+                    Text(engine.lastFailureKind.isEmpty ? OpsText.t("sync.none",language) :
+                         OpsText.t("sync.\(engine.lastFailureKind)",language))
+                        .foregroundStyle(engine.lastFailureKind.isEmpty ? DashPalette.text : .orange)
+                        .multilineTextAlignment(.trailing)
+                }.font(.caption)
+                if engine.autoSyncPaused {
+                    Text(OpsText.t("sync.paused",language)).font(.footnote).foregroundStyle(.orange)
+                    Button(OpsText.t("sync.resume",language)) { engine.resumeAutoSyncAfterErase() }
+                        .buttonStyle(.borderedProminent).tint(DashPalette.blue)
+                } else {
+                    Text(OpsText.t("sync.help",language)).font(.caption2).foregroundStyle(DashPalette.text)
+                }
+            }
             Text(t("analysis.dataSince")).font(.caption2).foregroundStyle(DashPalette.text)
         }.task(id:engine.sheetID) { await count() }
     }

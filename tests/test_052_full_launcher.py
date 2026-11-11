@@ -71,7 +71,7 @@ class OneButtonReleaseTests(unittest.TestCase):
 
     def test_cloud_upload_allowlist_has_real_test_dependencies(self):
         cloud=(ROOT/'tools/cloud_build.ps1').read_text(encoding='utf8')
-        for marker in ["'.swift','.js','.xml','.json','.storekit'", 
+        for marker in ["'.swift','.js','.mjs','.xml','.json','.storekit'", 
                        "Add-ByExtension 'website'", "Add-ByExtension 'scripts'",
                        r"Add-ByExtension 'ios\Resources' @('.strings'", 
                        "'release_manifest.json'"]:

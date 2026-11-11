@@ -33,7 +33,7 @@ jobs:
           brew install xcodegen
           # Google iOS client settings already generated on Windows before upload.
           # Do not run configure.py here: absent google_oauth.json would reset to demo ID.
-          xcodegen generate --spec project.yml
+          xcodegen generate --spec project.watch.yml
       - name: Reconstruct test-only public OAuth metadata
         shell: bash
         run: |
@@ -54,6 +54,8 @@ jobs:
         run: |
           set -o pipefail
           python3 tools/prepayment_audit.py 2>&1 | tee prepayment-run.log
+      - name: Privacy-safe bug report contract tests
+        run: node --test tests/test_057_support_policy.mjs
       - name: Unsigned iOS simulator build with real Apple SDK
         shell: bash
         run: |
@@ -69,6 +71,11 @@ jobs:
         run: |
           # The helper runs: xcodebuild -sdk iphoneos CODE_SIGNING_ALLOWED=NO
           bash tools/ci_xcode_build.sh iphone
+      - name: Blocking watchOS simulator build
+        shell: bash
+        run: |
+          set -o pipefail
+          bash tools/ci_xcode_build.sh watch
       - name: Normalize unsigned app Info.plist
         shell: bash
         run: |
@@ -79,7 +86,7 @@ jobs:
           mkdir -p Payload
           cp -R build/Build/Products/Debug-iphoneos/OraNaplo.app Payload/
           zip -qry OraNaplo-UNSIGNED.ipa Payload
-      - name: Verify IPA configuration
+      - name: Verify IPA configuration including companion payload
         shell: bash
         run: |
           set -o pipefail
@@ -102,16 +109,6 @@ jobs:
           name: OraNaplo-unsigned-ipa
           path: OraNaplo-UNSIGNED.ipa
           retention-days: 7
-      # Non-blocking watchOS target audit. A passing phone IPA does NOT imply
-      # watchOS capability/signing or watch-app embedding has been verified.
-      - name: watchOS companion source and target compile audit
-        if: success()
-        continue-on-error: true
-        shell: bash
-        run: |
-          set -o pipefail
-          xcodegen generate --spec project.watch.yml
-          bash tools/ci_xcode_build.sh watch
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4

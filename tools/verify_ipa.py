@@ -31,11 +31,20 @@ try:
         if len(plist_paths) != 1:
             raise SystemExit(1)
         info = plistlib.loads(archive.read(plist_paths[0]))
+        watch_plists = [name for name in archive.namelist() if '/Watch/' in name
+                        and name.startswith('Payload/') and name.endswith('.app/Info.plist')]
+        print('Embedded Watch app Info.plist:', watch_plists, flush=True)
+        check(len(watch_plists) == 1, 'Az iOS IPA egyetlen beágyazott watchOS .app célt tartalmaz')
+        watch_info = plistlib.loads(archive.read(watch_plists[0])) if len(watch_plists) == 1 else {}
 except (OSError, zipfile.BadZipFile, ValueError, plistlib.InvalidFileException) as exc:
     print("HIBA: IPA vagy Info.plist olvasási hiba:", exc, flush=True)
     raise SystemExit(2)
 
 bundle_id = str(info.get("CFBundleIdentifier", ""))
+if watch_info:
+    check(str(watch_info.get('WKCompanionAppBundleIdentifier','')) == bundle_id,
+          'Watch WKCompanionAppBundleIdentifier == iOS Bundle ID')
+    check(watch_info.get('WKWatchKitApp') is True, 'WatchKit alkalmazás build-metaadat megfelelő')
 print("IPA Bundle ID:", bundle_id or "HIÁNYZIK")
 check(bool(bundle_id and "$" not in bundle_id), "CFBundleIdentifier beállítva és feloldva")
 for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",

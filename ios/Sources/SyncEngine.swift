@@ -8,7 +8,7 @@ import UserNotifications
 final class SyncEngine: ObservableObject {
     static let shared = SyncEngine()
     @Published var busy = false
-    @Published var status = "Diagnosztika: " + CrashCheckpoint.last
+    @Published var status = SyncStatusText.t("Diagnosztika: ", "Diagnostics: ", "Diagnose: ") + CrashCheckpoint.last
     @Published var basicHealthFlowCompleted = UserDefaults.standard.bool(forKey: "healthBasicCompleted")
     @Published var fullHealthFlowCompleted = UserDefaults.standard.bool(forKey: "healthFullCompleted")
     @Published var lastSync = UserDefaults.standard.string(forKey: "lastSync") ?? "–"
@@ -25,6 +25,10 @@ final class SyncEngine: ObservableObject {
     @Published var lastWorkout: WorkoutSnapshot?
     @Published var observations: [ObservationNotice] = []
     @Published var syncHadError = false
+    @Published private(set) var lastFailureKind = ""
+    @Published private(set) var lastAttemptDate: Date?
+    @Published private(set) var syncProgress = "idle"
+    @Published private(set) var autoSyncPaused = false
     @Published var lastUploadedCount = 0
     @Published var lastSuccessfulDate: Date? = UserDefaults.standard.object(forKey: "lastSuccessfulSyncDate") as? Date
     @Published var selectedDays = UserDefaults.standard.integer(forKey: "days") == 0 ? 30 : UserDefaults.standard.integer(forKey: "days")
@@ -42,7 +46,7 @@ final class SyncEngine: ObservableObject {
         if profileAuthorized { await refreshProfileAndObservations() }
         // Opportunistic catch-up when the app starts, not a guaranteed timer.
         let previous = UserDefaults.standard.object(forKey: "lastAutoSyncAttempt") as? Date ?? .distantPast
-        if account.loggedIn && basicHealthFlowCompleted && Date().timeIntervalSince(previous) > 1800 {
+        if account.loggedIn && !autoSyncPaused && basicHealthFlowCompleted && Date().timeIntervalSince(previous) > 1800 {
             UserDefaults.standard.set(Date(), forKey: "lastAutoSyncAttempt")
             await sync()
         }
@@ -70,7 +74,7 @@ final class SyncEngine: ObservableObject {
             await refreshProfileAndObservations()
         } catch {
             profileMessageKey = "profile.status.error"
-            status = "Egészségprofil engedélyezési hiba: \(error.localizedDescription)"
+            status = SyncStatusText.t("Egészségprofil engedélyezési hiba: \(error.localizedDescription)", "Health profile authorization error: \(error.localizedDescription)", "Fehler bei der Freigabe des Gesundheitsprofils: \(error.localizedDescription)")
             CrashCheckpoint.mark("Egészségprofil: \(error.localizedDescription)")
         }
     }
@@ -117,7 +121,7 @@ final class SyncEngine: ObservableObject {
             profileMessageKey = "profile.status.exported"
         } catch {
             profileMessageKey = "profile.status.error"
-            status = "Egészségprofil Google Sheets hiba: \(error.localizedDescription)"
+            status = SyncStatusText.t("Egészségprofil Google Sheets hiba: \(error.localizedDescription)", "Health profile Google Sheets error: \(error.localizedDescription)", "Google-Sheets-Fehler beim Gesundheitsprofil: \(error.localizedDescription)")
         }
     }
 
@@ -125,6 +129,7 @@ final class SyncEngine: ObservableObject {
         guard account.loggedIn else {
             sheetID = ""
             pendingCount = 0
+            lastSync = "–"; lastSuccessfulDate = nil; lastAttemptDate = nil; lastFailureKind = ""; autoSyncPaused = false
             return
         }
         let email = account.email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -133,15 +138,24 @@ final class SyncEngine: ObservableObject {
             try await queue.selectAccount(email)
             sheetID = SpreadsheetRegistry.sheetID(for: email)
             pendingCount = await queue.count()
+            // Sync state must be scoped by Google identity, not by a global date.
+            lastSync = UserDefaults.standard.string(forKey:"syncLast.\(email)") ?? "–"
+            lastSuccessfulDate = UserDefaults.standard.object(forKey:"syncDate.\(email)") as? Date
+            lastFailureKind = UserDefaults.standard.string(forKey:"syncError.\(email)") ?? ""
+            lastAttemptDate = UserDefaults.standard.object(forKey:"syncAttempt.\(email)") as? Date
+            syncHadError = !lastFailureKind.isEmpty
+            autoSyncPaused = UserDefaults.standard.bool(forKey:"syncPause.\(email)")
         } catch {
             sheetID = ""
-            status = "Fiókhoz tartozó mentési sor hiba: \(error.localizedDescription)"
+            status = SyncStatusText.t("Fiókhoz tartozó mentési sor hiba: \(error.localizedDescription)", "Account-specific upload queue error: \(error.localizedDescription)", "Fehler in der Kontowarteschlange: \(error.localizedDescription)")
         }
     }
 
     func findPreviousSheet() async {
         await recoverCurrentSheetIfNeeded()
-        status = sheetID.isEmpty ? "Nem található korábbi táblázat." : "A korábbi táblázat elérhető."
+        status = sheetID.isEmpty
+            ? SyncStatusText.t("Nem található korábbi táblázat.", "No previous spreadsheet found.", "Keine frühere Tabelle gefunden.")
+            : SyncStatusText.t("A korábbi táblázat elérhető.", "Previous spreadsheet is available.", "Frühere Tabelle ist verfügbar.")
     }
 
     private func recoverCurrentSheetIfNeeded() async {
@@ -167,8 +181,90 @@ final class SyncEngine: ObservableObject {
         account.signOut()
         sheetID = ""
         pendingCount = 0
-        status = "Google-fiók leválasztva. A helyi adatok fiókonként elkülönítve maradnak."
+        lastSync = "–"; lastSuccessfulDate = nil; lastAttemptDate = nil; lastFailureKind = ""
+        syncProgress = "idle"; autoSyncPaused = false
+        status = SyncStatusText.t("Google-fiók leválasztva. A helyi adatok fiókonként elkülönítve maradnak.", "Google account disconnected. Local data remains separated by account.", "Google-Konto getrennt. Lokale Daten bleiben nach Konto getrennt.")
     }
+    private var syncAccountKey: String {
+        account.email.trimmingCharacters(in:.whitespacesAndNewlines).lowercased()
+    }
+    private func markAttempt(_ key:String) {
+        lastAttemptDate = Date()
+        let identity=syncAccountKey
+        if !identity.isEmpty { UserDefaults.standard.set(lastAttemptDate,forKey:"syncAttempt.\(identity)") }
+        syncProgress = key
+        SafeDiagnosticTrail.mark(.syncStarted)
+    }
+    private func markSuccess() {
+        let now=Date()
+        lastSuccessfulDate=now; lastSync=ISO.string(now)
+        let identity=syncAccountKey
+        if !identity.isEmpty {
+            UserDefaults.standard.set(now,forKey:"syncDate.\(identity)")
+            UserDefaults.standard.set(lastSync,forKey:"syncLast.\(identity)")
+            UserDefaults.standard.removeObject(forKey:"syncError.\(identity)")
+        }
+        lastFailureKind=""; syncHadError=false; syncProgress="done"
+        SafeDiagnosticTrail.mark(.syncFinished)
+    }
+    private func markFailure(_ error:Error) {
+        // Save only an intentionally coarse error category; no token, user ID,
+        // spreadsheet title, GPS position or raw health measurement in diagnostics.
+        let ns=error as NSError
+        let kind:String
+        if ns.domain==NSURLErrorDomain { kind="network" }
+        else if ns.code==401 || ns.code==403 { kind="authorization" }
+        else if ns.code==429 { kind="quota" }
+        else { kind="unknown" }
+        lastFailureKind=kind; syncHadError=true; syncProgress="failed"
+        let identity=syncAccountKey
+        if !identity.isEmpty { UserDefaults.standard.set(kind,forKey:"syncError.\(identity)") }
+        CrashCheckpoint.mark("sync.failed.\(kind)")
+        SafeDiagnosticTrail.mark(.syncFailed)
+    }
+
+    /// Explicit, confirmed local deletion. The remote Google spreadsheet and
+    /// Apple's Health data are deliberately not modified here.
+    func eraseLocalHistory() async throws {
+        guard !busy else { throw SyncError.config("A szinkron befejezése után törölhetsz.") }
+        guard RunTracker.shared.phase != .recording else { throw RunStorageError.activeWorkout }
+        let identity=syncAccountKey
+        if !identity.isEmpty {
+            try await queue.selectAccount(identity)
+            try await queue.eraseSelectedAccount()
+            for key in UserDefaults.standard.dictionaryRepresentation().keys where key.hasPrefix("anchor.v3.\(identity).") {
+                UserDefaults.standard.removeObject(forKey:key)
+            }
+            for name in ["syncDate.\(identity)","syncLast.\(identity)","syncError.\(identity)","syncAttempt.\(identity)"] {
+                UserDefaults.standard.removeObject(forKey:name)
+            }
+        }
+        try RunTracker.shared.eraseAllLocalRuns()
+        UserDefaults.standard.removeObject(forKey:"lastSync")
+        UserDefaults.standard.removeObject(forKey:"lastSuccessfulSyncDate")
+        lastSync="–"; lastSuccessfulDate=nil; lastAttemptDate=nil; lastFailureKind=""; lastUploadedCount=0
+        pendingCount=0; xmlImportCounts=""; syncProgress="idle"
+        profile=nil; lastWorkout=nil; observations=[]; personalObservations=[]
+        CrashCheckpoint.eraseHistory()
+        SafeDiagnosticTrail.erase()
+        if !identity.isEmpty {
+            UserDefaults.standard.set(true,forKey:"syncPause.\(identity)")
+            autoSyncPaused=true
+            try await queue.selectAccount(identity)
+        }
+        status=SyncStatusText.t("A helyi előzmények törölve. A Google Sheets és az Apple Egészség adatai megmaradtak.", "Local history deleted. Google Sheets and Apple Health data were preserved.", "Lokaler Verlauf gelöscht. Google Sheets und Apple Health bleiben erhalten.")
+    }
+
+    /// User-initiated reactivation. Warn in the UI: data in Apple Health can
+    /// be imported again; deleting local history never deletes the source.
+    func resumeAutoSyncAfterErase() {
+        let identity=syncAccountKey
+        guard !identity.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey:"syncPause.\(identity)")
+        autoSyncPaused=false
+        syncProgress="idle"
+    }
+
     func setDays(_ days: Int) { selectedDays = days; UserDefaults.standard.set(days, forKey: "days") }
     func toggleGroup(_ id: String) {
         if enabledGroups.contains(id) { enabledGroups.remove(id) } else { enabledGroups.insert(id) }
@@ -181,31 +277,31 @@ final class SyncEngine: ObservableObject {
             try await reader.authorize(onlyHeartRate: true)
             basicHealthFlowCompleted = true
             UserDefaults.standard.set(true, forKey: "healthBasicCompleted")
-            status = "Alap HealthKit engedélykérés lefutott (csak pulzus)."
+            status = SyncStatusText.t("Alap HealthKit engedélykérés lefutott (csak pulzus).", "Basic HealthKit authorization requested (heart rate only).", "Grundlegende HealthKit-Freigabe angefordert (nur Herzfrequenz).")
             await reader.enableBackgroundNotifications()
             await refreshOverview()
         } catch {
             CrashCheckpoint.mark("HealthKit alapteszt hiba: \(error.localizedDescription)")
-            status = "Egészség alapteszt: \(error.localizedDescription)"
+            status = SyncStatusText.t("Egészség alapteszt: \(error.localizedDescription)", "Basic Health test: \(error.localizedDescription)", "Health-Grundtest: \(error.localizedDescription)")
         }
     }
     func authorizeAllHealth() async {
         // HealthKit READ access is available to free users for on-device dashboards.
         // Pro is checked only in export code, so free mode still uploads heart rate alone.
         guard basicHealthFlowCompleted else {
-            status = "Előbb futtasd a pulzus HealthKit-alaptesztet"
+            status = SyncStatusText.t("Előbb futtasd a pulzus HealthKit-alaptesztet", "Run the basic HealthKit heart-rate test first", "Führe zuerst den HealthKit-Grundtest für die Herzfrequenz durch")
             return
         }
         do {
             try await reader.authorize()
             fullHealthFlowCompleted = true
             UserDefaults.standard.set(true, forKey: "healthFullCompleted")
-            status = "Teljes HealthKit engedélykérés lezajlott"
+            status = SyncStatusText.t("Teljes HealthKit engedélykérés lezajlott", "Full HealthKit authorization requested", "Vollständige HealthKit-Freigabe angefordert")
             await reader.enableBackgroundNotifications()
             await refreshOverview()
         } catch {
             CrashCheckpoint.mark("HealthKit teljes engedélykérés hiba: \(error.localizedDescription)")
-            status = "Egészség teljes kérés: \(error.localizedDescription)"
+            status = SyncStatusText.t("Egészség teljes kérés: \(error.localizedDescription)", "Full Health authorization: \(error.localizedDescription)", "Vollständige Health-Freigabe: \(error.localizedDescription)")
         }
     }
     func login() async {
@@ -214,25 +310,27 @@ final class SyncEngine: ObservableObject {
             try await account.signIn()
             await loadCurrentAccount()
             await recoverCurrentSheetIfNeeded()
-            status = sheetID.isEmpty ? "Google-fiók kapcsolódott. Most létrehozhatod a táblázatodat." : "Google-fiók kapcsolódott. A saját táblázatod elérhető."
+            status = sheetID.isEmpty
+                ? SyncStatusText.t("Google-fiók kapcsolódott. Most létrehozhatod a táblázatodat.", "Google account connected. You can now create a spreadsheet.", "Google-Konto verbunden. Du kannst jetzt eine Tabelle erstellen.")
+                : SyncStatusText.t("Google-fiók kapcsolódott. A saját táblázatod elérhető.", "Google account connected. Your spreadsheet is available.", "Google-Konto verbunden. Deine Tabelle ist verfügbar.")
         } catch {
             CrashCheckpoint.mark("Google hiba: \(error.localizedDescription)")
-            status = "Google: \(error.localizedDescription)"
+            status = SyncStatusText.t("Google: \(error.localizedDescription)", "Google: \(error.localizedDescription)", "Google: \(error.localizedDescription)")
         }
     }
     /// Opt-in export of an on-device recorded run. Raw GPS coordinates stay local;
     /// route sharing is a separate GPX action. Only verified Pro can queue these rows.
     func exportRecordedRun(_ run: RecordedRun) async {
-        guard !busy else { status = "A szinkron már folyamatban van."; return }
+        guard !busy else { status = SyncStatusText.t("A szinkron már folyamatban van.", "Synchronization is already in progress.", "Synchronisierung läuft bereits."); return }
         await SubscriptionManager.shared.refreshEntitlement()
         guard SubscriptionManager.shared.proActive else {
-            status = "A saját futások részletes exportálásához Pro-előfizetés szükséges."; return
+            status = SyncStatusText.t("A saját futások részletes exportálásához Pro-előfizetés szükséges.", "Pro subscription required to export detailed runs.", "Für den detaillierten Laufexport ist Pro erforderlich."); return
         }
         guard account.loggedIn else {
-            status = "Először csatlakoztasd a Google-fiókodat."; return
+            status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat.", "Connect your Google account first.", "Verbinde zuerst dein Google-Konto."); return
         }
         guard run.completed, let end = run.ended else {
-            status = "Csak befejezett futást lehet exportálni."; return
+            status = SyncStatusText.t("Csak befejezett futást lehet exportálni.", "Only completed runs can be exported.", "Nur abgeschlossene Läufe können exportiert werden."); return
         }
         await loadCurrentAccount()
         let rootID = "phoneRun:\(run.id.uuidString)"
@@ -265,7 +363,7 @@ final class SyncEngine: ObservableObject {
         do {
             try await queue.enqueue([row] + segments)
             pendingCount = await queue.count()
-            status = "Futás és 100 m-es szakaszok helyben mentve feltöltésre."
+            status = SyncStatusText.t("Futás és 100 m-es szakaszok helyben mentve feltöltésre.", "Run and 100 m splits saved locally for upload.", "Lauf und 100-m-Abschnitte lokal zum Hochladen gespeichert.")
             await prepareGoogleSheet()
             if !sheetID.isEmpty {
                 do {
@@ -274,22 +372,22 @@ final class SyncEngine: ObservableObject {
                         goals:RunTracker.shared.weeklySummary)
                 } catch {
                     // Do not roll back a successful measurement export because of a dashboard update.
-                    status += " A rekordok/friss célok szinkronja külön nem sikerült: \(error.localizedDescription)"
+                    status += SyncStatusText.t(" A rekordok/friss célok szinkronja külön nem sikerült: \(error.localizedDescription)", " Records or goal synchronization failed separately: \(error.localizedDescription)", " Die Synchronisierung der Rekorde oder Ziele ist separat fehlgeschlagen: \(error.localizedDescription)")
                 }
             }
-        } catch { status = "Futásexport-hiba: \(error.localizedDescription)" }
+        } catch { status = SyncStatusText.t("Futásexport-hiba: \(error.localizedDescription)", "Run export error: \(error.localizedDescription)", "Fehler beim Laufexport: \(error.localizedDescription)") }
     }
 
     func addJournalEntry(kind: String, note: String) async {
         await SubscriptionManager.shared.refreshEntitlement()
         guard SubscriptionManager.shared.proActive else {
-            status = "A napló exportálásához Pro-előfizetés szükséges."
+            status = SyncStatusText.t("A napló exportálásához Pro-előfizetés szükséges.", "Pro subscription required to export journal entries.", "Für den Tagebuchexport ist Pro erforderlich.")
             return
         }
-        guard account.loggedIn else { status = "A napló mentéséhez először csatlakoztasd a Google-fiókodat"; return }
+        guard account.loggedIn else { status = SyncStatusText.t("A napló mentéséhez először csatlakoztasd a Google-fiókodat", "Connect your Google account before saving journal entries", "Verbinde dein Google-Konto, bevor du Einträge speicherst"); return }
         await loadCurrentAccount()
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { status = "Írj be egy megjegyzést"; return }
+        guard !trimmed.isEmpty else { status = SyncStatusText.t("Írj be egy megjegyzést", "Enter a note", "Gib eine Notiz ein"); return }
         let row = ExportRow(id: "note:\(UUID().uuidString)", sheet: "Naplo", values: [
             UUID().uuidString, kind, ISO.string(Date()), "", "", "", "Kézi napló", "iPhone",
             String(trimmed.prefix(1500)), "aktív", ISO.string(Date())
@@ -297,14 +395,14 @@ final class SyncEngine: ObservableObject {
         do {
             try await queue.enqueue([row])
             pendingCount = await queue.count()
-            status = "Naplóbejegyzés helyben mentve."
+            status = SyncStatusText.t("Naplóbejegyzés helyben mentve.", "Journal entry saved locally.", "Tagebucheintrag lokal gespeichert.")
             // Journal rows do not require HealthKit. Try immediate upload when signed in.
             if account.loggedIn && !busy {
                 await prepareGoogleSheet()
             } else if !account.loggedIn {
-                status = "Napló helyben mentve. Google-bejelentkezés után tölthető fel."
+                status = SyncStatusText.t("Napló helyben mentve. Google-bejelentkezés után tölthető fel.", "Journal saved locally. Upload after signing into Google.", "Tagebuch lokal gespeichert. Upload nach Google-Anmeldung möglich.")
             }
-        } catch { status = "Naplómentés hiba: \(error.localizedDescription)" }
+        } catch { status = SyncStatusText.t("Naplómentés hiba: \(error.localizedDescription)", "Journal save error: \(error.localizedDescription)", "Fehler beim Speichern des Tagebuchs: \(error.localizedDescription)") }
     }
 
     /// Create the user's Google spreadsheet and upload pending journal rows.
@@ -312,11 +410,12 @@ final class SyncEngine: ObservableObject {
     func prepareGoogleSheet() async {
         guard !busy else { return }
         guard account.loggedIn else {
-            status = "Először csatlakoztasd a Google-fiókodat"
+            status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat", "Connect your Google account first", "Verbinde zuerst dein Google-Konto")
             return
         }
         busy = true
         lastUploadedCount = 0
+        markAttempt("starting")
         defer { busy = false }
         await SubscriptionManager.shared.refreshEntitlement()
         await loadCurrentAccount()
@@ -328,12 +427,13 @@ final class SyncEngine: ObservableObject {
             try await ensureSheet(using: sheets)
             try await sheets.ensureProfileTabs(sheetID: sheetID)
             try await flushQueue(using: sheets)
-            status = "Google Sheets készen áll. A táblázat megnyitható. Várakozó sorok: \(pendingCount)."
+            markSuccess()
+            status = SyncStatusText.t("Google Sheets készen áll. A táblázat megnyitható. Várakozó sorok: \(pendingCount).", "Google Sheets is ready. You can open the spreadsheet. Pending rows: \(pendingCount).", "Google Sheets ist bereit. Tabelle kann geöffnet werden. Ausstehende Zeilen: \(pendingCount).")
             CrashCheckpoint.mark("Google Sheets inicializálás: sikeres")
         } catch {
-            syncHadError = true
+            markFailure(error)
             pendingCount = await queue.count()
-            status = "Google Sheets hiba: \(error.localizedDescription)"
+            status = SyncStatusText.t("Google Sheets hiba: \(error.localizedDescription)", "Google Sheets error: \(error.localizedDescription)", "Google-Sheets-Fehler: \(error.localizedDescription)")
             CrashCheckpoint.mark("Google Sheets inicializálás hiba: \(error.localizedDescription)")
         }
     }
@@ -347,16 +447,21 @@ final class SyncEngine: ObservableObject {
 
     func sync() async {
         guard !busy else { return }
+        guard !autoSyncPaused else {
+            status = SyncStatusText.t("A szinkronizálás szünetel a helyi törlés után. A folytatást külön engedélyezd.", "Sync is paused after local deletion. Explicitly enable it to continue.", "Synchronisierung nach lokaler Löschung pausiert. Zum Fortfahren ausdrücklich aktivieren.")
+            return
+        }
         guard account.loggedIn else {
-            status = "Először csatlakoztasd a Google-fiókodat"
+            status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat", "Connect your Google account first", "Verbinde zuerst dein Google-Konto")
             return
         }
         guard basicHealthFlowCompleted else {
-            status = "Egészségadatokhoz HealthKit-engedély szükséges. A Google Sheets létrehozása ettől függetlenül működik."
+            status = SyncStatusText.t("Egészségadatokhoz HealthKit-engedély szükséges. A Google Sheets létrehozása ettől függetlenül működik.", "HealthKit permission required for health data. You can still create a Google Sheet.", "Für Gesundheitsdaten ist HealthKit-Zugriff erforderlich. Google Sheets kann trotzdem erstellt werden.")
             return
         }
         busy = true
         lastUploadedCount = 0
+        markAttempt("starting")
         defer { busy = false }
         await SubscriptionManager.shared.refreshEntitlement()
         let isPro = SubscriptionManager.shared.proActive
@@ -368,7 +473,8 @@ final class SyncEngine: ObservableObject {
         do {
             // Do not invoke a new authorization prompt during export; missing entitlements
             // on free sideload installations can cause an Objective-C exception.
-            status = "Egészségadatok feldolgozása…"
+            status = SyncStatusText.t("Egészségadatok feldolgozása…", "Processing health data…", "Gesundheitsdaten werden verarbeitet…")
+            syncProgress = "reading"
             try await ensureSheet(using: sheets)
             // Queue upload happens before and after the new HealthKit read: offline records recover first.
             try await flushQueue(using: sheets)
@@ -385,6 +491,10 @@ final class SyncEngine: ObservableObject {
                 if let data = UserDefaults.standard.data(forKey: key) {
                     anchor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
                 }
+                // 30k records per metric per pass used to be a silent truncation.
+                // When a page cap is reached, surface a recoverable error so another
+                // sync resumes from the already persisted anchor instead of claiming success.
+                var caughtUp = false
                 for _ in 0..<100 {
                     let (added, deleted, newAnchor, count) = try await reader.samplePage(type, since: since, anchor: anchor)
                     let rows = added.map { rawRow($0, metric: metric) } + deleted.map { deletedRow($0, metric: metric) }
@@ -394,7 +504,10 @@ final class SyncEngine: ObservableObject {
                         UserDefaults.standard.set(bytes, forKey: key)
                         anchor = newAnchor
                     }
-                    if count < 300 { break }
+                    if count < 300 { caughtUp = true; break }
+                }
+                if !caughtUp {
+                    throw SyncError.config("Nagy HealthKit előzmény: 30 000 minta után folytatás szükséges. A mentett importpozíció megmaradt; indíts új szinkront.")
                 }
             }
             if fullData && enabledGroups.contains("edzes") {
@@ -425,16 +538,13 @@ final class SyncEngine: ObservableObject {
             try await queue.enqueue([batt])
             }
             try await flushQueue(using: sheets)
-            lastSuccessfulDate = Date()
-            UserDefaults.standard.set(lastSuccessfulDate, forKey: "lastSuccessfulSyncDate")
-            lastSync = ISO.string(Date()); UserDefaults.standard.set(lastSync, forKey: "lastSync")
-            syncHadError = false
+            markSuccess()
             await refreshOverview()
-            status = "Sikeres ellenőrzés. \(pendingCount) sor várakozik."
+            status = SyncStatusText.t("Sikeres ellenőrzés. \(pendingCount) sor várakozik.", "Check completed. \(pendingCount) rows pending.", "Prüfung abgeschlossen. \(pendingCount) Zeilen ausstehend.")
         } catch {
-            syncHadError = true
+            markFailure(error)
             pendingCount = await queue.count()
-            status = "Hiba: \(error.localizedDescription) – a helyi mentések megmaradnak"
+            status = SyncStatusText.t("Hiba: \(error.localizedDescription) – a helyi mentések megmaradnak", "Error: \(error.localizedDescription) – local saves are preserved", "Fehler: \(error.localizedDescription) – lokale Daten bleiben erhalten")
             let center = UNUserNotificationCenter.current()
             let lang = AppLanguage(rawValue: UserDefaults.standard.string(forKey: "oranaplo.app.language") ?? "hu") ?? .hu
             let settings = await center.notificationSettings()
@@ -459,11 +569,13 @@ final class SyncEngine: ObservableObject {
         // A new installation may recover the Google Sheet but not its local
         // uploaded-ID journal. One remote column-A scan per sheet prevents
         // reimporting years of already existing measurements as duplicates.
-        let needsInitialReconciliation = await queue.completedCount() == 0
+        let sheetChanged = await queue.needsRemoteReconciliation(for: sheetID)
+        let previousCompleted = await queue.completedCount()
+        let needsInitialReconciliation = previousCompleted == 0 || sheetChanged
         var remoteIDsBySheet: [String: Set<String>] = [:]
         var attempts = 0
         while true {
-            let batch = await queue.nextBatch(limit: 150)
+            let batch = await queue.nextBatch(limit: 150, allowPremium: SubscriptionManager.shared.proActive)
             if batch.isEmpty { break }
             if needsInitialReconciliation, let first = batch.first {
                 if remoteIDsBySheet[first.sheet] == nil {
@@ -480,11 +592,17 @@ final class SyncEngine: ObservableObject {
                 }
             }
             try await queue.beginUpload(batch)
+            syncProgress = "uploading"
             try await sheets.append(batch, sheetID: sheetID)
             try await queue.didUpload(batch)
             lastUploadedCount += batch.count
             attempts += 1
             if attempts > 2000 { throw SyncError.config("Feltöltési biztonsági korlát: indíts új szinkront") }
+        }
+        // Mark only after every queried remote sheet succeeded; a failed scan must
+        // be repeated on the next attempt rather than allowing duplicate appends.
+        if needsInitialReconciliation && !remoteIDsBySheet.isEmpty {
+            try await queue.markRemoteReconciled(for: sheetID)
         }
         pendingCount = await queue.count()
     }
@@ -541,12 +659,12 @@ final class SyncEngine: ObservableObject {
             try await ensureSheet(using: api)
             try await flushQueue(using: api)
             xmlImportStatusKey = "xml.finished"
-            status = "Apple Health XML import: \(savedCount) / \(result.recordsSeen). Várakozó: \(pendingCount)"
+            status = SyncStatusText.t("Apple Health XML import: \(savedCount) / \(result.recordsSeen). Várakozó: \(pendingCount)", "Apple Health XML import: \(savedCount) / \(result.recordsSeen). Pending: \(pendingCount)", "Apple Health XML-Import: \(savedCount) / \(result.recordsSeen). Ausstehend: \(pendingCount)")
             CrashCheckpoint.mark("XML import finished: records=\(result.recordsAccepted), batches=\(result.batches)")
         } catch {
             pendingCount = await queue.count()
             xmlImportStatusKey = "xml.failed"
-            status = "XML import hiba: \(error.localizedDescription)"
+            status = SyncStatusText.t("XML import hiba: \(error.localizedDescription)", "XML import error: \(error.localizedDescription)", "XML-Importfehler: \(error.localizedDescription)")
             CrashCheckpoint.mark("XML import failed; pending=\(pendingCount)")
         }
     }
@@ -579,4 +697,16 @@ private final class XMLBatchErrorBox: @unchecked Sendable {
     private var error: Error?
     func store(_ newError: Error) { lock.lock(); defer { lock.unlock() }; error = newError }
     func read() -> Error? { lock.lock(); defer { lock.unlock() }; return error }
+}
+
+/// Language-dependent operational messages. Values are computed at the point of the event.
+/// They are presentation strings only and must not control authorization or queue logic.
+private enum SyncStatusText {
+    static func t(_ hu: String, _ en: String, _ de: String) -> String {
+        switch AppLanguage(rawValue: UserDefaults.standard.string(forKey: "oranaplo.app.language") ?? "hu") ?? .hu {
+        case .hu: return hu
+        case .en: return en
+        case .de: return de
+        }
+    }
 }

@@ -27,3 +27,8 @@ Az app **nem tud világméretű rangsort megjeleníteni saját, működő szerve
 - Kijelentkezett / hitelesítetlen kérés nem olvashat publikus sorokat sem (ebben a v1-es sémában).
 - `published=false` felhasználó adata másik felhasználó számára nem látható.
 - A rangsor egyenlő pontszám esetén közös helyezést ad (1+ a nagyobb pontszámú publikált felhasználók száma).
+
+
+## E-mailes hibabejelentés
+
+A külön Edge Function telepítése: `docs/EMAIL_HIBAJELENTES_SUPABASE_060.md`. A nyilvános kliensbe titkos kulcs nem kerülhet.

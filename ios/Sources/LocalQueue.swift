@@ -10,6 +10,8 @@ actor LocalQueue {
     private var pending: [ExportRow] = []
     private var completed: Set<String> = []
     private var uncertain: [ExportRow] = []
+    // The reconciliation marker belongs to a specific remote spreadsheet, not just an account.
+    private var lastReconciledSheetID = ""
 
     init() {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -25,6 +27,7 @@ actor LocalQueue {
     private var completedFile: URL { accountDirectory.appendingPathComponent("exported_ids.json") } // legacy import
     private var completedLogFile: URL { accountDirectory.appendingPathComponent("completed_ids.log") }
     private var uncertainFile: URL { accountDirectory.appendingPathComponent("uncertain_upload.json") }
+    private var reconciledFile: URL { accountDirectory.appendingPathComponent("reconciled_sheet.json") }
 
     private func accountKey(for email: String) -> String {
         let value = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -52,14 +55,19 @@ actor LocalQueue {
             incomingCompleted.formUnion(text.split(separator: "\n").map(String.init))
         }
         let incomingUncertain = try decodeExisting(dir.appendingPathComponent("uncertain_upload.json"), as: [ExportRow].self, empty: [])
+        let incomingReconciled = try decodeExisting(dir.appendingPathComponent("reconciled_sheet.json"), as: String.self, empty: "")
         accountIdentifier = key
         completed = incomingCompleted
         pending = incomingPending.filter { !incomingCompleted.contains($0.id) }
         uncertain = incomingUncertain.filter { !incomingCompleted.contains($0.id) }
+        lastReconciledSheetID = incomingReconciled
         if pending.count != incomingPending.count { try savePending() }
         if uncertain.count != incomingUncertain.count { try saveUncertain() }
     }
     func enqueue(_ rows: [ExportRow], forAccount email: String? = nil) throws {
+        // A journal entered without a Google account used to appear successful but
+        // was stored in a never-imported 'offline' queue. Fail visibly instead.
+        guard accountIdentifier != "offline" else { throw QueueError.missingAccount }
         if let email, accountKey(for: email) != accountIdentifier { throw QueueError.accountSwitched }
         var existing = Set(pending.map(\.id))
         for row in rows where !completed.contains(row.id) {
@@ -75,15 +83,15 @@ actor LocalQueue {
     }
     func clearUncertain() throws { uncertain = []; try saveUncertain() }
     private func saveUncertain() throws {
-        try JSONEncoder().encode(uncertain).write(to: uncertainFile, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try JSONEncoder().encode(uncertain).write(to: uncertainFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
     private func savePending() throws {
-        try JSONEncoder().encode(pending).write(to: pendingFile, options: [.atomic, .completeFileProtectionUnlessOpen])
+        try JSONEncoder().encode(pending).write(to: pendingFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
     private func appendCompletedIDs(_ ids: Set<String>) throws {
         guard !ids.isEmpty else { return }
         if !FileManager.default.fileExists(atPath: completedLogFile.path) {
-            try Data().write(to: completedLogFile, options: [.atomic, .completeFileProtectionUnlessOpen])
+            try Data().write(to: completedLogFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
         }
         let file = try FileHandle(forWritingTo: completedLogFile)
         defer { try? file.close() }
@@ -92,9 +100,20 @@ actor LocalQueue {
         try file.write(contentsOf: data)
         try file.synchronize()
     }
-    func nextBatch(limit: Int = 150) -> [ExportRow] {
-        guard let first = pending.first(where: { !completed.contains($0.id) }) else { return [] }
-        return Array(pending.filter { $0.sheet == first.sheet && !completed.contains($0.id) }.prefix(limit))
+    private func freeRow(_ row: ExportRow) -> Bool {
+        row.sheet == "Pulzus" && row.values.count >= 2 && row.values[1] == "Pulzus"
+    }
+    func nextBatch(limit: Int = 150, allowPremium: Bool = true) -> [ExportRow] {
+        guard let first = pending.first(where: { !completed.contains($0.id) && (allowPremium || freeRow($0)) }) else { return [] }
+        return Array(pending.filter { $0.sheet == first.sheet && !completed.contains($0.id) && (allowPremium || freeRow($0)) }.prefix(limit))
+    }
+    func needsRemoteReconciliation(for sheetID: String) -> Bool {
+        !sheetID.isEmpty && lastReconciledSheetID != sheetID
+    }
+    func markRemoteReconciled(for sheetID: String) throws {
+        guard !sheetID.isEmpty else { throw QueueError.missingAccount }
+        try JSONEncoder().encode(sheetID).write(to: reconciledFile, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+        lastReconciledSheetID = sheetID
     }
     func didUpload(_ rows: [ExportRow]) throws {
         let freshIDs = Set(rows.map(\.id)).subtracting(completed)
@@ -109,17 +128,25 @@ actor LocalQueue {
         let idsInFlight = Set(uncertain.map(\.id))
         if idsInFlight.isSubset(of: completed) { try clearUncertain() }
     }
-    /// On downgrade purge premium records waiting for upload, including journals,
-    /// HRV and workouts. Already exported Google Sheets cells are the user's own.
+    /// Subscription expiry must NEVER delete locally queued medical records.
+    /// Free-tier filtering happens in nextBatch(allowPremium:); pending Pro rows
+    /// stay encrypted-by-file-protection on this device until reactivation or user deletion.
+    /// Kept for compatibility with earlier callers, and intentionally non-destructive.
     func restrictToFreeTier() throws {
-        pending.removeAll { row in
-            row.sheet != "Pulzus" || row.values.count < 2 || row.values[1] != "Pulzus"
-        }
-        try savePending()
-        // Premium rows may not be retried after expiry, even if they were in-flight.
-        uncertain.removeAll { $0.sheet != "Pulzus" || $0.values.count < 2 || $0.values[1] != "Pulzus" }
-        try saveUncertain()
+        // No mutation: nextBatch(allowPremium: false) filters outbound uploads.
     }
+    /// Explicitly delete ALL locally retained queue, uncertain batches and
+    /// uploaded IDs for the currently authenticated Google account. Never touches
+    /// the user's remote Google Drive spreadsheet or Apple Health database.
+    func eraseSelectedAccount() throws {
+        guard accountIdentifier != "offline" else { throw QueueError.missingAccount }
+        let dir = accountDirectory
+        if FileManager.default.fileExists(atPath:dir.path) { try FileManager.default.removeItem(at:dir) }
+        pending = []; completed = []; uncertain = []
+        lastReconciledSheetID = ""
+        accountIdentifier = "offline"
+    }
+
     func count() -> Int { pending.count }
     func completedCount() -> Int { completed.count }
     func isUploaded(_ id: String) -> Bool { completed.contains(id) }

@@ -33,6 +33,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var pendingStart = false
     private var pendingMapPreview = false
     private var lastPowerConfiguration = Date.distantPast
+    @Published private(set) var storageDamaged = false
     @Published private(set) var recentlyBrokenRecords: [RunPersonalRecord] = []
     @Published private(set) var archivedRecords: [RunPersonalRecord] = []
     private var longTermRuns: [UUID:RunHistoryEntry] = [:]
@@ -86,9 +87,21 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     func weeklyGoalChanged() { objectWillChange.send() }
 
     private func load() {
-        let runs: [RecordedRun] = (try? Data(contentsOf: file)).flatMap {
-            try? JSONDecoder().decode([RecordedRun].self, from: $0)
-        } ?? []
+        let backup = file.deletingLastPathComponent().appendingPathComponent("runs.backup.json")
+        let primaryExists = FileManager.default.fileExists(atPath: file.path)
+        let backupExists = FileManager.default.fileExists(atPath: backup.path)
+        let primary = (try? Data(contentsOf: file)).flatMap { try? JSONDecoder().decode([RecordedRun].self, from: $0) }
+        let recovered = primary ?? (try? Data(contentsOf: backup)).flatMap { try? JSONDecoder().decode([RecordedRun].self, from: $0) }
+        // A damaged local database must NEVER be silently overwritten by an empty list.
+        if (primaryExists || backupExists) && recovered == nil {
+            storageDamaged = true
+            message = "run.status.storageDamaged"
+            CrashCheckpoint.mark("run.storage.damaged")
+            SafeDiagnosticTrail.mark(.runStorageDamaged)
+            return
+        }
+        let runs = recovered ?? []
+        if primary == nil && recovered != nil { message = "run.status.backupRestored" }
         history = runs.filter { $0.completed }.sorted { $0.started > $1.started }
         let archiveFile=file.deletingLastPathComponent().appendingPathComponent("record-archive.json")
         if let recordData=try? Data(contentsOf:archiveFile),
@@ -124,16 +137,22 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
             phase = .paused
             awaitingFixAfterPause = true
             message = "run.status.restored"
+            SafeDiagnosticTrail.mark(.runInterrupted)
         }
     }
     private func persist() {
+        guard !storageDamaged else { return }
         guard let data = try? JSONEncoder().encode((current?.completed == false ? [current!] : []) + Array(history.prefix(25))) else {
             message = "run.status.saveError"; return
         }
         do {
             // Background GPS checkpoints must remain writable after the device is locked,
             // but files stay protected until the first unlock after reboot.
-            try data.write(to: file,options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            let backup = file.deletingLastPathComponent().appendingPathComponent("runs.backup.json")
+            // Two atomic copies: if the phone is killed during a checkpoint, the
+            // previous good copy can recover the run without overwriting data.
+            try data.write(to:backup,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
+            try data.write(to:file,options:[.atomic,.completeFileProtectionUntilFirstUserAuthentication])
             let routeFree=Array(longTermRuns.values)
             let summaryFile=file.deletingLastPathComponent().appendingPathComponent("run-summary.json")
             try JSONEncoder().encode(routeFree).write(to:summaryFile,
@@ -160,6 +179,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
 
     func requestPermissionAndStart(kilograms: Double?, centimeters: Double?) {
         guard phase == .ready || phase == .finished else { return }
+        guard !storageDamaged else { message = "run.status.storageDamaged"; return }
         guard CLLocationManager.locationServicesEnabled() else { message = "run.status.locationOff"; return }
         requestedWeight = kilograms
         requestedHeight = centimeters
@@ -192,6 +212,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         activeStart = now; accumulated = 0; elapsedNow = 0; stepBase = 0; stepSegmentStart = nil
         lastFix = nil; awaitingFixAfterPause = true; latestSpeedKmh = nil; message = "run.status.recording"
         phase = .recording
+        SafeDiagnosticTrail.mark(.runStarted)
         configureActiveGPS() // only while an explicitly started run is active
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
@@ -214,6 +235,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         tick?.invalidate();tick=nil
         lastFix = nil; awaitingFixAfterPause = true
         message = "run.status.paused"
+        SafeDiagnosticTrail.mark(.runPaused)
         checkpoint(force: true)
     }
     func resume() {
@@ -237,6 +259,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         startPedometer(now)
         startClock()
         message = "run.status.recording"
+        SafeDiagnosticTrail.mark(.runResumed)
         checkpoint(force: true)
     }
     func finish() {
@@ -246,7 +269,8 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         run.ended = now
         run.activeSeconds = accumulated
         run.completed = true
-        run.interrupted = false
+        // Preserve a visible interruption marker on archived sessions.
+        run.interrupted = run.interrupted || current?.interrupted == true
         run.estimatedKcal = RunMath.estimatedRunningKcal(meters: run.gpsMeters,kilograms: run.kilograms)
         current = run
         history.removeAll(where: { $0.id == run.id })
@@ -273,10 +297,48 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         pedometer.stopUpdates()
         tick?.invalidate(); tick = nil
         message = "run.status.saved"
+        SafeDiagnosticTrail.mark(.runFinished)
         checkpoint(force: true)
         Task { await reconcileSteps(run.id) }
         Task { await enrichHeart(run.id) }
     }
+    /// A restored workout remains paused until the runner explicitly resumes or saves it.
+    var hasInterruptedWorkout: Bool { phase == .paused && current?.interrupted == true }
+
+    func discardInterruptedWorkout() {
+        guard hasInterruptedWorkout else { return }
+        current = nil
+        accumulated = 0
+        elapsedNow = 0
+        activeStart = nil
+        phase = .ready
+        manager.stopUpdatingLocation()
+        manager.allowsBackgroundLocationUpdates = false
+        pedometer.stopUpdates()
+        tick?.invalidate(); tick = nil
+        message = "run.status.discarded"
+        checkpoint(force:true)
+    }
+
+    /// Removes local GPS routes, workout history, PRs and cached summaries ONLY.
+    /// Apple Health workouts and the user's remote Google Sheet are unaffected.
+    func eraseAllLocalRuns() throws {
+        guard phase != .recording else { throw RunStorageError.activeWorkout }
+        let names = ["runs.json", "runs.backup.json", "record-archive.json", "run-summary.json"]
+        for name in names {
+            let path = file.deletingLastPathComponent().appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath:path.path) { try FileManager.default.removeItem(at:path) }
+        }
+        pedometer.stopUpdates()
+        manager.stopUpdatingLocation()
+        manager.allowsBackgroundLocationUpdates = false
+        tick?.invalidate(); tick = nil
+        history=[]; current=nil; archivedRecords=[]; longTermRuns=[:]; recentlyBrokenRecords=[]
+        phase = .ready; accumulated=0; elapsedNow=0; activeStart=nil
+        lastFix=nil; storageDamaged=false; message=""
+        SafeDiagnosticTrail.mark(.runErased)
+    }
+
     func newRun() {
         guard phase != .recording else { return }
         current = nil
@@ -545,4 +607,10 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         try? xml.write(to:dest,atomically:true,encoding:.utf8)
         return FileManager.default.fileExists(atPath:dest.path) ? dest : nil
     }
+}
+
+
+enum RunStorageError: LocalizedError {
+    case activeWorkout
+    var errorDescription: String? { "Az aktív edzést előbb szüneteltesd és fejezd be." }
 }

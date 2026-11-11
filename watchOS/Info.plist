@@ -6,8 +6,8 @@
 <key>CFBundleDisplayName</key><string>ÓraNapló</string>
 <key>CFBundleExecutable</key><string>$(EXECUTABLE_NAME)</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.5.4</string>
-<key>CFBundleVersion</key><string>15</string>
+<key>CFBundleShortVersionString</key><string>0.6.1</string>
+<key>CFBundleVersion</key><string>18</string>
 <key>WKWatchKitApp</key><true/>
 <key>WKCompanionAppBundleIdentifier</key><string>hu.oranaplo.ios</string>
 <key>NSHealthShareUsageDescription</key><string>Az ÓraNapló Watch edzés közben pulzust, távolságot és edzésidőt olvas.</string>

@@ -185,6 +185,10 @@ struct ContentView: View {
     @State private var showLegalInformation = false
     @State private var showJournal = false
     @State private var showXMLPicker = false
+    @State private var showEraseLocalConfirmation = false
+    @State private var showEraseRankingConfirmation = false
+    @State private var privacyOperationKey = ""
+    @State private var supportCategory: SafeSupportPayload.Category = .sync
     @AppStorage("oranaplo.water.allRecorded") private var waterAllRecorded = false
     @AppStorage("oranaplo.water.goalML") private var waterGoalML = 0.0
 
@@ -323,6 +327,58 @@ struct ContentView: View {
                 } label: {
                     ActionLabel(title:NewScreenText.t("profile.settings",language),symbol:"gearshape",primary:false)
                 }.buttonStyle(PressFeedback())
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:12) {
+                        SectionTitle(title:OpsText.t("privacy.title",language),symbol:"lock.shield")
+                        Text(OpsText.t("privacy.localHelp",language)).font(.caption).foregroundStyle(Atelier.mist)
+                        Button { showEraseLocalConfirmation = true } label: {
+                            ActionLabel(title:OpsText.t("privacy.removeLocal",language),symbol:"trash",primary:false)
+                        }.buttonStyle(PressFeedback()).disabled(engine.busy || tracker.phase == .recording)
+                        .confirmationDialog(OpsText.t("privacy.confirm",language),isPresented:$showEraseLocalConfirmation) {
+                            Button(OpsText.t("privacy.delete",language),role:.destructive) {
+                                Task {
+                                    do { try await engine.eraseLocalHistory(); privacyOperationKey="privacy.deleted" }
+                                    catch { privacyOperationKey="privacy.error" }
+                                }
+                            }
+                        } message: { Text(OpsText.t("privacy.localHelp",language)) }
+                        Button { showEraseRankingConfirmation = true } label: {
+                            ActionLabel(title:OpsText.t("privacy.removeRanking",language),symbol:"person.crop.circle.badge.minus",primary:false)
+                        }.buttonStyle(PressFeedback()).disabled(rankings.busy || !rankings.isConfigured || !rankings.published)
+                        .confirmationDialog(OpsText.t("privacy.rankConfirm",language),isPresented:$showEraseRankingConfirmation) {
+                            Button(OpsText.t("privacy.removeRanking",language),role:.destructive) {
+                                Task { await rankings.revoke() }
+                            }
+                        } message: { Text(OpsText.t("privacy.rankNote",language)) }
+                        if !privacyOperationKey.isEmpty {
+                            Text(OpsText.t(privacyOperationKey,language))
+                                .font(.caption).foregroundStyle(Atelier.mist)
+                        }
+                    }
+                }
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:12) {
+                        SectionTitle(title:OpsText.t("support.title",language),symbol:"ladybug")
+                        Text(OpsText.t("support.help",language)).font(.caption).foregroundStyle(Atelier.mist)
+                        Picker(OpsText.t("support.category",language),selection:$supportCategory) {
+                            ForEach(SafeSupportPayload.Category.allCases) { category in
+                                Text(OpsText.t("support.\(category.rawValue)",language)).tag(category)
+                            }
+                        }.pickerStyle(.menu)
+                        Button {
+                            Task { await rankings.submitBugReport(category:supportCategory,reasonCode:engine.lastFailureKind.isEmpty ? "none" : engine.lastFailureKind) }
+                        } label: {
+                            ActionLabel(title:OpsText.t("support.send",language),symbol:"envelope",primary:false)
+                        }.buttonStyle(PressFeedback()).disabled(rankings.reportBusy || !rankings.isConfigured)
+                        if !rankings.reportMessageKey.isEmpty {
+                            Text(OpsText.t(rankings.reportMessageKey,language))
+                                .font(.caption).foregroundStyle(Atelier.mist)
+                        }
+                        if !rankings.isConfigured {
+                            Text(OpsText.t("support.notConfigured",language)).font(.caption2).foregroundStyle(.orange)
+                        }
+                    }
+                }
                 Text(NewScreenText.t("profile.publishConsent",language))
                     .font(.caption2).foregroundStyle(Atelier.mist)
             }

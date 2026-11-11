@@ -25,10 +25,14 @@ def fixture():
     }
 
 
-def run_verifier(info, directory):
+def run_verifier(info, directory, with_watch=True):
     ipa = Path(directory) / 'test.ipa'
     with zipfile.ZipFile(ipa, 'w') as out:
         out.writestr('Payload/OraNaplo.app/Info.plist', plistlib.dumps(info))
+        if with_watch:
+            out.writestr('Payload/OraNaplo.app/Watch/OraNaploWatch.app/Info.plist', plistlib.dumps({
+                'WKCompanionAppBundleIdentifier':'hu.oranaplo.ios', 'WKWatchKitApp':True,
+                'CFBundleIdentifier':'hu.oranaplo.ios.watchkitapp'}))
     return subprocess.run([sys.executable, str(ROOT/'tools/verify_ipa.py'), str(ipa)], capture_output=True, text=True)
 
 
@@ -37,6 +41,12 @@ class IPAInfoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = run_verifier(fixture(), tmp)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verifier_rejects_missing_watch_companion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_verifier(fixture(), tmp, with_watch=False)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('beágyazott watchOS', result.stdout)
 
     def test_verifier_rejects_missing_background_location(self):
         with tempfile.TemporaryDirectory() as tmp:
