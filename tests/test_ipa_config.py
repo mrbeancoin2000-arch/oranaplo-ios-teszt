@@ -31,7 +31,7 @@ def run_verifier(info, directory, with_watch=True):
         out.writestr('Payload/OraNaplo.app/Info.plist', plistlib.dumps(info))
         if with_watch:
             out.writestr('Payload/OraNaplo.app/Watch/OraNaploWatch.app/Info.plist', plistlib.dumps({
-                'WKCompanionAppBundleIdentifier':'hu.oranaplo.ios', 'WKWatchKitApp':True,
+                'WKCompanionAppBundleIdentifier':'hu.oranaplo.ios', 'WKApplication':True,
                 'CFBundleIdentifier':'hu.oranaplo.ios.watchkitapp'}))
     return subprocess.run([sys.executable, str(ROOT/'tools/verify_ipa.py'), str(ipa)], capture_output=True, text=True)
 
@@ -41,6 +41,20 @@ class IPAInfoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = run_verifier(fixture(), tmp)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verifier_rejects_legacy_watch_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ipa = Path(tmp) / 'legacy.ipa'
+            with zipfile.ZipFile(ipa, 'w') as out:
+                out.writestr('Payload/OraNaplo.app/Info.plist', plistlib.dumps(fixture()))
+                out.writestr('Payload/OraNaplo.app/Watch/OraNaploWatch.app/Info.plist',
+                             plistlib.dumps({'WKCompanionAppBundleIdentifier': 'hu.oranaplo.ios',
+                                             'WKWatchKitApp': True,
+                                             'CFBundleIdentifier': 'hu.oranaplo.ios.watchkitapp'}))
+            result = subprocess.run([sys.executable, str(ROOT/'tools/verify_ipa.py'), str(ipa)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('single-target WKApplication', result.stdout)
 
     def test_verifier_rejects_missing_watch_companion(self):
         with tempfile.TemporaryDirectory() as tmp:

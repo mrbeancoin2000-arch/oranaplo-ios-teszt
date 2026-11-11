@@ -44,7 +44,8 @@ bundle_id = str(info.get("CFBundleIdentifier", ""))
 if watch_info:
     check(str(watch_info.get('WKCompanionAppBundleIdentifier','')) == bundle_id,
           'Watch WKCompanionAppBundleIdentifier == iOS Bundle ID')
-    check(watch_info.get('WKWatchKitApp') is True, 'WatchKit alkalmazás build-metaadat megfelelő')
+    check(watch_info.get('WKApplication') is True and watch_info.get('WKWatchKitApp') is not True,
+          'WatchKit alkalmazás: single-target WKApplication metaadat (nincs legacy WKWatchKitApp)')
 print("IPA Bundle ID:", bundle_id or "HIÁNYZIK")
 check(bool(bundle_id and "$" not in bundle_id), "CFBundleIdentifier beállítva és feloldva")
 for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",

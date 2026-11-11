@@ -8,7 +8,8 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.6.1</string>
 <key>CFBundleVersion</key><string>18</string>
-<key>WKWatchKitApp</key><true/>
+<!-- Single-target SwiftUI watchOS application (Xcode 14+). Not a legacy WatchKit extension container. -->
+<key>WKApplication</key><true/>
 <key>WKCompanionAppBundleIdentifier</key><string>hu.oranaplo.ios</string>
 <key>NSHealthShareUsageDescription</key><string>Az ÓraNapló Watch edzés közben pulzust, távolságot és edzésidőt olvas.</string>
 <key>NSHealthUpdateUsageDescription</key><string>Az ÓraNapló Watch a felhasználó által indított edzést az Apple Egészségbe mentheti.</string>

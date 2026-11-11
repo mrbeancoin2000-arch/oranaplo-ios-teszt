@@ -54,6 +54,22 @@ def validate(root=ROOT):
     import re
     if re.search(r"(?m)^\s+info:\s*$", spec) or re.search(r"(?m)^\s+entitlements:\s*$", spec):
         problems.append("XcodeGen info:/entitlements: szekció felülírhatja a forrás plist fájljait.")
+    # A single-target SwiftUI Watch app must declare WKApplication, not the
+    # legacy WKWatchKitApp flag that instructs embedded binary validation to
+    # search for a separate WatchKit extension (none exists by design).
+    try:
+        watch = plistlib.loads((root / "watchOS/Info.plist").read_bytes())
+        if watch.get("WKApplication") is not True:
+            problems.append("Watch: hiányzik a WKApplication=true (single-target) mező.")
+        if watch.get("WKWatchKitApp") is True:
+            problems.append("Watch: a legacy WKWatchKitApp=true külön extensiont vár és hibás.")
+        if watch.get("WKCompanionAppBundleIdentifier") != "hu.oranaplo.ios":
+            problems.append("Watch: hibás companion iOS Bundle ID.")
+    except (OSError, ValueError, plistlib.InvalidFileException) as exc:
+        problems.append(f"Watch Info.plist olvasási hiba: {exc}")
+    watch_spec = (root / "project.watch.yml").read_text(encoding="utf-8")
+    if "  OraNaploWatch:\n    type: application\n    platform: watchOS" not in watch_spec:
+        problems.append("Watch: nem single-target watchOS application a project.watch.yml konfigurációban.")
     return problems
 
 
@@ -65,6 +81,7 @@ def main():
         return 2
     print("OK: XcodeGen nem generálja újra az Info.plist és entitlements forrásfájlokat.", flush=True)
     print("OK: Google OAuth és HealthKit forrásbeállítások megfelelnek.", flush=True)
+    print("OK: single-target watchOS WKApplication=true; nincs legacy WatchKit extension jelölő.", flush=True)
     print("FIGYELEM: Az ingyenes Sideloadly aláírás HealthKit-jogosultságot továbbra sem garantál.", flush=True)
     return 0
 
