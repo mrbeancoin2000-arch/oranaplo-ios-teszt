@@ -125,6 +125,7 @@ enum Catalog {
         ("edzes", "Edzés"), ("test", "Testösszetétel"),
         ("taplalkozas", "Táplálkozás"), ("kulso", "Külső mérések")
     ]
+    static let freeSampleIdentifier = "HKQuantityTypeIdentifierHeartRate"
     static let sheets = ["Pulzus", "HRV", "Alvas", "Edzesek", "100m", "Aktivitas", "Sportmeresek", "Test", "Taplalkozas", "KulsoMeresek", "Jelzesek", "EKG", "Akkumulator", "Naplo", "Rendszernaplo"]
     static let rawHeader = ["azonosito", "tipus", "kezdet_UTC", "veg_UTC", "ertek", "egyseg", "forras", "eszkoz", "megjegyzes", "allapot", "mentes_UTC"]
     static let segmentHeader = ["azonosito", "edzes_azonosito", "sport", "szakasz_m", "kezdet_UTC", "veg_UTC", "ido_masodperc", "sebesseg_kmh", "tempo_perc_km", "pulzus_atlag", "pulzus_min", "pulzus_max", "gps_pontossag", "mentes_UTC"]

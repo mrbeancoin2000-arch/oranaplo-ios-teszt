@@ -18,7 +18,8 @@ final class GoogleAccount: ObservableObject {
         do {
             let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
             loggedIn = user.grantedScopes?.contains(Self.scope) == true
-            email = user.profile?.email ?? "Google-fiók"
+            email = user.profile?.email ?? ""
+            if email.isEmpty { loggedIn = false }
         } catch { loggedIn = false; email = "" }
     }
     func signIn() async throws {
@@ -51,7 +52,11 @@ final class GoogleAccount: ObservableObject {
             user = try await user.addScopes([Self.scope], presenting: controller).user
         }
         loggedIn = true
-        email = user.profile?.email ?? "Google-fiók"
+        email = user.profile?.email ?? ""
+        guard !email.isEmpty else {
+            loggedIn = false
+            throw SyncError.config("Google-fiók e-mail címe nem elérhető")
+        }
         CrashCheckpoint.mark("Google: sikeres bejelentkezés")
     }
     func token() async throws -> String {

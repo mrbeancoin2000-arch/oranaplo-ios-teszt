@@ -47,7 +47,7 @@ def main():
     plist = ROOT / 'ios/Resources/Info.plist'
     info = plistlib.loads(plist.read_bytes()) if plist.exists() else {}
     info.update({
-        'CFBundleDevelopmentRegion': 'hu',
+        'CFBundleDevelopmentRegion': 'en',
         'CFBundleDisplayName': 'ÓraNapló',
         'CFBundleIdentifier': '$(PRODUCT_BUNDLE_IDENTIFIER)',
         'CFBundleExecutable': '$(EXECUTABLE_NAME)',

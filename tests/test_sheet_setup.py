@@ -16,13 +16,13 @@ class IndependentGoogleSetupTests(unittest.TestCase):
     def test_health_sync_returns_without_entitlement(self):
         src = (ROOT / "ios/Sources/SyncEngine.swift").read_text(encoding="utf-8")
         method = src.split("func sync() async {", 1)[1].split("private func flushQueue", 1)[0]
-        self.assertIn("guard fullHealthFlowCompleted else", method)
-        self.assertIn("return", method.split("guard fullHealthFlowCompleted else", 1)[1].split("}", 1)[0])
+        self.assertIn("guard basicHealthFlowCompleted else", method)
+        self.assertIn("return", method.split("guard basicHealthFlowCompleted else", 1)[1].split("}", 1)[0])
 
     def test_sheet_create_button_is_not_healthkit_gated(self):
         src = (ROOT / "ios/Sources/OraNaploApp.swift").read_text(encoding="utf-8")
         self.assertIn("await engine.prepareGoogleSheet()", src)
-        self.assertIn("Google Sheets létrehozása", src)
+        self.assertIn('t("sheet.create")', src)
         self.assertIn("await engine.sync()", src)
         self.assertNotIn(".disabled(engine.busy || !engine.account.loggedIn || !engine.fullHealthFlowCompleted)", src)
 

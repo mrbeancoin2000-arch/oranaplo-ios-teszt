@@ -7,7 +7,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class PremiumInterfaceTests(unittest.TestCase):
     def test_focused_native_tabs(self):
         code = (ROOT / 'ios/Sources/OraNaploApp.swift').read_text(encoding='utf-8')
-        for label in ('Áttekintés', 'Mérések', 'Napló', 'Beállítások'):
+        for label in ('tab.home', 'tab.metrics', 'tab.journal', 'tab.settings'):
             self.assertIn(label, code)
         self.assertIn('TabView(selection:', code)
         self.assertIn('MetalSurface', code)
@@ -16,7 +16,7 @@ class PremiumInterfaceTests(unittest.TestCase):
         code = (ROOT / 'ios/Sources/OraNaploApp.swift').read_text(encoding='utf-8')
         self.assertIn('if let url = engine.sheetURL', code)
         self.assertIn('Button { openURL(url) }', code)
-        self.assertIn('Saját Google Sheets megnyitása', code)
+        self.assertIn('t("sheet.open")', code)
         self.assertIn('await engine.prepareGoogleSheet()', code)
 
     def test_sheet_link_matches_active_account(self):

@@ -1,6 +1,8 @@
 param([string]$LogPath = "")
 if ($LogPath) { Start-Transcript -Path $LogPath -Append | Out-Null }
 $ErrorActionPreference = 'Stop'
+# Read Swift and localized sources correctly on Windows with cp1250 defaults.
+$env:PYTHONUTF8 = '1'
 Write-Output "=== OraNaplo Windows Setup ==="
 Write-Output "Idopont: $(Get-Date -Format o)"
 Write-Output "Windows: $([Environment]::OSVersion.VersionString)"

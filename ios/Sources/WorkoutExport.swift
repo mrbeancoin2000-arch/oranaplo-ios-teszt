@@ -54,7 +54,11 @@ func split100m(_ locations: [CLLocation], heart: [(Date,Double)], workout: HKWor
         let a = fixes[i - 1], b = fixes[i]
         let time = b.timestamp.timeIntervalSince(a.timestamp)
         let segmentDistance = b.distance(from: a)
-        guard time > 0, segmentDistance > 0, segmentDistance <= 250 else { continue }
+        guard time > 0, time <= 120, segmentDistance > 0, segmentDistance <= 250 else {
+            distanceInSegment = 0
+            segmentStart = b.timestamp
+            continue
+        }
         var traveled = 0.0
         while distanceInSegment + (segmentDistance - traveled) >= 100 {
             let remaining = 100 - distanceInSegment

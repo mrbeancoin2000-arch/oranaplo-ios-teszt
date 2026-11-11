@@ -57,6 +57,14 @@ actor LocalQueue {
         pending.removeAll { ids.contains($0.id) }
         try savePending()
     }
+    /// On downgrade purge premium records waiting for upload, including journals,
+    /// HRV and workouts. Already exported Google Sheets cells are the user's own.
+    func restrictToFreeTier() throws {
+        pending.removeAll { row in
+            row.sheet != "Pulzus" || row.values.count < 2 || row.values[1] != "Pulzus"
+        }
+        try savePending()
+    }
     func count() -> Int { pending.count }
     func isUploaded(_ id: String) -> Bool { completed.contains(id) }
 }

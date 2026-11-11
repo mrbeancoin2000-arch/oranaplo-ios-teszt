@@ -15,6 +15,11 @@ final class SyncEngine: ObservableObject {
     @Published var sheetID = ""
     @Published var batteryLevel = 0
     @Published var charging = false
+    @Published var lastWorkout: WorkoutSnapshot?
+    @Published var observations: [ObservationNotice] = []
+    @Published var syncHadError = false
+    @Published var lastUploadedCount = 0
+    @Published var lastSuccessfulDate: Date? = UserDefaults.standard.object(forKey: "lastSuccessfulSyncDate") as? Date
     @Published var selectedDays = UserDefaults.standard.integer(forKey: "days") == 0 ? 30 : UserDefaults.standard.integer(forKey: "days")
     @Published var enabledGroups: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "groups") ?? Catalog.groups.map(\.0))
     let account = GoogleAccount()
@@ -24,11 +29,27 @@ final class SyncEngine: ObservableObject {
     /// Called at launch, and also by the background refresh worker.
     func bootstrap() async {
         await account.restore()
+        await SubscriptionManager.shared.load()
         await loadCurrentAccount()
+        if basicHealthFlowCompleted { await refreshOverview() }
+        // Opportunistic catch-up when the app starts, not a guaranteed timer.
+        let previous = UserDefaults.standard.object(forKey: "lastAutoSyncAttempt") as? Date ?? .distantPast
+        if account.loggedIn && basicHealthFlowCompleted && Date().timeIntervalSince(previous) > 1800 {
+            UserDefaults.standard.set(Date(), forKey: "lastAutoSyncAttempt")
+            await sync()
+        }
         await recoverCurrentSheetIfNeeded()
     }
 
     func refreshCount() async { await loadCurrentAccount() }
+
+    func refreshOverview() async {
+        guard basicHealthFlowCompleted else { return }
+        let overview = HealthOverview(reader: reader)
+        lastWorkout = await overview.latestWorkout()
+        observations = await overview.notices()
+    }
+
 
     private func loadCurrentAccount() async {
         guard account.loggedIn else {
@@ -46,6 +67,11 @@ final class SyncEngine: ObservableObject {
             sheetID = ""
             status = "Fiókhoz tartozó mentési sor hiba: \(error.localizedDescription)"
         }
+    }
+
+    func findPreviousSheet() async {
+        await recoverCurrentSheetIfNeeded()
+        status = sheetID.isEmpty ? "Nem található korábbi táblázat." : "A korábbi táblázat elérhető."
     }
 
     private func recoverCurrentSheetIfNeeded() async {
@@ -84,13 +110,20 @@ final class SyncEngine: ObservableObject {
             try await reader.authorize(onlyHeartRate: true)
             basicHealthFlowCompleted = true
             UserDefaults.standard.set(true, forKey: "healthBasicCompleted")
-            status = "Alap HealthKit engedélykérés lefutott (csak pulzus). Következő: teljes jogosultság."
+            status = "Alap HealthKit engedélykérés lefutott (csak pulzus)."
+            await reader.enableBackgroundNotifications()
+            await refreshOverview()
         } catch {
             CrashCheckpoint.mark("HealthKit alapteszt hiba: \(error.localizedDescription)")
             status = "Egészség alapteszt: \(error.localizedDescription)"
         }
     }
     func authorizeAllHealth() async {
+        await SubscriptionManager.shared.refreshEntitlement()
+        guard SubscriptionManager.shared.proActive else {
+            status = "Pro-előfizetés szükséges a teljes HealthKit-engedélyhez."
+            return
+        }
         guard basicHealthFlowCompleted else {
             status = "Előbb futtasd a pulzus HealthKit-alaptesztet"
             return
@@ -101,6 +134,7 @@ final class SyncEngine: ObservableObject {
             UserDefaults.standard.set(true, forKey: "healthFullCompleted")
             status = "Teljes HealthKit engedélykérés lezajlott"
             await reader.enableBackgroundNotifications()
+            await refreshOverview()
         } catch {
             CrashCheckpoint.mark("HealthKit teljes engedélykérés hiba: \(error.localizedDescription)")
             status = "Egészség teljes kérés: \(error.localizedDescription)"
@@ -118,6 +152,11 @@ final class SyncEngine: ObservableObject {
         }
     }
     func addJournalEntry(kind: String, note: String) async {
+        await SubscriptionManager.shared.refreshEntitlement()
+        guard SubscriptionManager.shared.proActive else {
+            status = "A napló exportálásához Pro-előfizetés szükséges."
+            return
+        }
         guard account.loggedIn else { status = "A napló mentéséhez először csatlakoztasd a Google-fiókodat"; return }
         await loadCurrentAccount()
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -148,8 +187,11 @@ final class SyncEngine: ObservableObject {
             return
         }
         busy = true
+        lastUploadedCount = 0
         defer { busy = false }
+        await SubscriptionManager.shared.refreshEntitlement()
         await loadCurrentAccount()
+        if !SubscriptionManager.shared.proActive { try? await queue.restrictToFreeTier() }
         await recoverCurrentSheetIfNeeded()
         let sheets = SheetsAPI(account: account)
         do {
@@ -159,6 +201,7 @@ final class SyncEngine: ObservableObject {
             status = "Google Sheets készen áll. A táblázat megnyitható. Várakozó sorok: \(pendingCount)."
             CrashCheckpoint.mark("Google Sheets inicializálás: sikeres")
         } catch {
+            syncHadError = true
             pendingCount = await queue.count()
             status = "Google Sheets hiba: \(error.localizedDescription)"
             CrashCheckpoint.mark("Google Sheets inicializálás hiba: \(error.localizedDescription)")
@@ -178,12 +221,18 @@ final class SyncEngine: ObservableObject {
             status = "Először csatlakoztasd a Google-fiókodat"
             return
         }
-        guard fullHealthFlowCompleted else {
+        guard basicHealthFlowCompleted else {
             status = "Egészségadatokhoz HealthKit-engedély szükséges. A Google Sheets létrehozása ettől függetlenül működik."
             return
         }
-        busy = true; defer { busy = false }
+        busy = true
+        lastUploadedCount = 0
+        defer { busy = false }
+        await SubscriptionManager.shared.refreshEntitlement()
+        let isPro = SubscriptionManager.shared.proActive
         await loadCurrentAccount()
+        // Never upload previously queued paid-tier records after an expiration.
+        if !isPro { try? await queue.restrictToFreeTier() }
         let since = Date().addingTimeInterval(-Double(selectedDays) * 86400)
         let sheets = SheetsAPI(account: account)
         do {
@@ -193,9 +242,15 @@ final class SyncEngine: ObservableObject {
             try await ensureSheet(using: sheets)
             // Queue upload happens before and after the new HealthKit read: offline records recover first.
             try await flushQueue(using: sheets)
-            for metric in Catalog.metrics where enabledGroups.contains(metric.group) {
+            let fullData = isPro && fullHealthFlowCompleted
+            for metric in Catalog.metrics where (
+                fullData ? enabledGroups.contains(metric.group) : metric.id == Catalog.freeSampleIdentifier
+            ) {
                 guard let type = metric.sampleType else { continue }
-                let key = "anchor.\(metric.id)"
+                // Anchors are scoped by Google identity + import period. Changing
+                // 30 days to a year starts a fresh historical read without duplicates.
+                let identity = account.email.lowercased()
+                let key = "anchor.v3.\(identity).\(selectedDays).\(metric.id)"
                 var anchor: HKQueryAnchor? = nil
                 if let data = UserDefaults.standard.data(forKey: key) {
                     anchor = try? NSKeyedUnarchiver.unarchivedObject(ofClass: HKQueryAnchor.self, from: data)
@@ -212,13 +267,13 @@ final class SyncEngine: ObservableObject {
                     if count < 300 { break }
                 }
             }
-            if enabledGroups.contains("edzes") {
+            if fullData && enabledGroups.contains("edzes") {
                 for workout in try await reader.getWorkouts(since: since) {
                     if await queue.isUploaded("workout:\(workout.uuid.uuidString)") { continue }
                     try await queue.enqueue(await WorkoutExport(reader: reader).rows(for: workout))
                 }
             }
-            if enabledGroups.contains("sziv") {
+            if fullData && enabledGroups.contains("sziv") {
                 // ECG raw voltage values can be numerous; uploaded only when the ECG category is enabled.
                 for ecg in try await reader.ecgs(since: since) {
                     let root = "ecg:\(ecg.uuid.uuidString)"
@@ -231,24 +286,32 @@ final class SyncEngine: ObservableObject {
                     }
                 }
             }
+            if fullData {
             let device = UIDevice.current
             device.isBatteryMonitoringEnabled = true
             batteryLevel = Int(max(device.batteryLevel, 0) * 100)
             charging = device.batteryState == .charging || device.batteryState == .full
             let batt = ExportRow(id: "battery:\(Int(Date().timeIntervalSince1970/3600))", sheet: "Akkumulator", values: [UUID().uuidString, "iPhone akkumulátor", ISO.string(Date()), "", String(batteryLevel), "%", "iPhone", device.name, charging ? "Töltőn" : "Nem tölt", "aktív", ISO.string(Date())])
             try await queue.enqueue([batt])
+            }
             try await flushQueue(using: sheets)
+            lastSuccessfulDate = Date()
+            UserDefaults.standard.set(lastSuccessfulDate, forKey: "lastSuccessfulSyncDate")
             lastSync = ISO.string(Date()); UserDefaults.standard.set(lastSync, forKey: "lastSync")
+            syncHadError = false
+            await refreshOverview()
             status = "Sikeres ellenőrzés. \(pendingCount) sor várakozik."
         } catch {
+            syncHadError = true
             pendingCount = await queue.count()
             status = "Hiba: \(error.localizedDescription) – a helyi mentések megmaradnak"
             let center = UNUserNotificationCenter.current()
+            let lang = AppLanguage(rawValue: UserDefaults.standard.string(forKey: "oranaplo.app.language") ?? "hu") ?? .hu
             let settings = await center.notificationSettings()
             if settings.authorizationStatus == .authorized {
                 let content = UNMutableNotificationContent()
-                content.title = "ÓraNapló – mentési hiba"
-                content.body = "A Google Sheets-szinkron nem sikerült. Nyisd meg az alkalmazást az ellenőrzéshez."
+                content.title = L10n.t("notification.sync.title", lang)
+                content.body = L10n.t("notification.sync.body", lang)
                 _ = try? await center.add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
             }
         }
@@ -260,6 +323,7 @@ final class SyncEngine: ObservableObject {
             if batch.isEmpty { break }
             try await sheets.append(batch, sheetID: sheetID)
             try await queue.didUpload(batch)
+            lastUploadedCount += batch.count
             attempts += 1
             if attempts > 2000 { throw SyncError.config("Feltöltési biztonsági korlát: indíts új szinkront") }
         }

@@ -160,282 +160,392 @@ private struct AppCanvas<Content: View>: View {
 struct ContentView: View {
     @EnvironmentObject private var engine: SyncEngine
     @Environment(\.openURL) private var openURL
-    @State private var journalKind = "Közérzet"
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var subscriptions = SubscriptionManager.shared
+    @AppStorage("oranaplo.app.language") private var languageCode = "hu"
+    @State private var selectedTab = 0
+    @State private var journalKind = "journal.mood"
     @State private var journalText = ""
-    @State private var selection = 0
+    @State private var showTechnicalDetails = false
+
+    private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .hu }
+    private func t(_ key: String) -> String { L10n.t(key, language) }
 
     var body: some View {
-        TabView(selection: $selection) {
-            home.tabItem { Label("Áttekintés", systemImage: "square.grid.2x2") }.tag(0)
-            measurements.tabItem { Label("Mérések", systemImage: "waveform.path.ecg") }.tag(1)
-            journal.tabItem { Label("Napló", systemImage: "square.and.pencil") }.tag(2)
-            settings.tabItem { Label("Beállítások", systemImage: "slider.horizontal.3") }.tag(3)
+        TabView(selection: $selectedTab) {
+            home.tabItem { Label(t("tab.home"), systemImage: "square.grid.2x2") }.tag(0)
+            measurements.tabItem { Label(t("tab.metrics"), systemImage: "waveform.path.ecg") }.tag(1)
+            journal.tabItem { Label(t("tab.journal"), systemImage: "square.and.pencil") }.tag(2)
+            settings.tabItem { Label(t("tab.settings"), systemImage: "slider.horizontal.3") }.tag(3)
         }
         .tint(Atelier.azure)
         .toolbarBackground(Atelier.graphite, for: .tabBar)
         .toolbarBackground(.visible, for: .tabBar)
         .preferredColorScheme(.dark)
+        .environment(\.locale, Locale(identifier: languageCode))
+        .onChange(of: scenePhase) { _, next in
+            if next == .active { Task { await subscriptions.refreshEntitlement() } }
+        }
     }
 
     private var home: some View {
         AppCanvas {
-            brandHeader
-            hero
-            mainSheetCard
-            syncCard
-            statusCard
-            Text("Az adatok a saját Google-fiókodban maradnak.")
-                .font(.system(size: 12)).foregroundStyle(Atelier.mist.opacity(0.7))
-                .frame(maxWidth: .infinity).padding(.top, 6)
-        }
-    }
-
-    private var brandHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "waveform.path.ecg")
-                .font(.system(size: 19, weight: .medium))
-                .foregroundStyle(Atelier.ice)
-                .frame(width: 39, height: 39)
-                .background(Atelier.steel, in: RoundedRectangle(cornerRadius: 12))
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Atelier.line))
-            Text("óranapló")
-                .font(.system(size: 22, weight: .bold, design: .rounded))
-                .tracking(-0.6).foregroundStyle(.white)
-            Spacer()
-            Text("BÉTA").font(.system(size: 10, weight: .semibold)).tracking(1.4)
-                .foregroundStyle(Atelier.ice.opacity(0.8))
-                .padding(.horizontal, 11).padding(.vertical, 7)
-                .background(Atelier.steel.opacity(0.8), in: Capsule())
-                .overlay(Capsule().stroke(Atelier.line))
-        }.padding(.bottom, 5)
-    }
-
-    private var hero: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(LinearGradient(colors: [Color(red: 0.14, green: 0.22, blue: 0.30), Atelier.graphite],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            Circle()
-                .stroke(Atelier.azure.opacity(0.13), lineWidth: 1)
-                .frame(width: 190, height: 190)
-                .offset(x: 230, y: -95)
-            Circle()
-                .fill(Atelier.azure.opacity(0.10))
-                .frame(width: 150, height: 150)
-                .blur(radius: 35)
-                .offset(x: 260, y: -60)
-            VStack(alignment: .leading, spacing: 16) {
-                MicroHeading(text: "A saját egészségadat-archívumod")
-                Text("Minden mérés.\nEgy táblázat.")
-                    .font(.system(size: 35, weight: .bold, design: .rounded))
-                    .tracking(-1.3).lineSpacing(0)
-                    .foregroundStyle(.white)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 9) {
-                    Image(systemName: "lock.shield.fill")
-                        .foregroundStyle(Atelier.mint)
-                    Text("Privát · A saját Google Drive-odban")
-                        .foregroundStyle(Atelier.ice.opacity(0.90))
-                        .font(.system(size: 12, weight: .medium))
+            HStack(spacing: 10) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(Atelier.azure)
+                    .frame(width: 42, height: 42)
+                    .background(Atelier.steel, in: RoundedRectangle(cornerRadius: 14))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ÓraNapló").font(.system(size: 22, weight: .bold, design: .rounded))
+                    MicroHeading(text: t("brand.subtitle"))
                 }
-            }.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(.white.opacity(0.14)))
-    }
+                Spacer()
+                Text(subscriptions.proActive ? t("common.pro") : t("common.free"))
+                    .font(.system(size: 10, weight: .bold)).tracking(1)
+                    .foregroundStyle(subscriptions.proActive ? Atelier.mint : Atelier.ice)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Atelier.steel, in: Capsule())
+            }.padding(.bottom, 5)
 
-    private var mainSheetCard: some View {
-        MetalSurface(prominent: true) {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .center, spacing: 12) {
-                    Image(systemName: "tablecells.fill")
-                        .font(.system(size: 22, weight: .medium))
-                        .foregroundStyle(Atelier.mint)
-                        .frame(width: 46, height: 46)
-                        .background(Atelier.mint.opacity(0.09), in: RoundedRectangle(cornerRadius: 14))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Google Sheets").font(.system(size: 19, weight: .semibold, design: .rounded))
-                        Text(engine.sheetURL == nil ? "Még nincs létrehozott táblázat" : "A táblázatod használatra kész")
-                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
-                    }
-                    Spacer()
-                    if engine.sheetURL != nil {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(Atelier.mint).font(.system(size: 21))
-                    }
-                }
-                if engine.account.loggedIn {
+            MetalSurface(prominent: true) {
+                VStack(alignment: .leading, spacing: 13) {
+                    MicroHeading(text: subscriptions.proActive ? t("tier.pro") : t("tier.free"))
+                    Text(t("hero.title"))
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .tracking(-1.0).foregroundStyle(.white)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(t("hero.desc"))
+                        .font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 8) {
-                        Image(systemName: "person.crop.circle").foregroundStyle(Atelier.mist)
-                        Text(engine.account.email).lineLimit(1).truncationMode(.middle)
-                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
-                    }
+                        Image(systemName: "lock.shield")
+                        Text(t("settings.privacy"))
+                    }.font(.system(size: 11, weight: .medium)).foregroundStyle(Atelier.mint)
+                }
+            }
+            if !engine.basicHealthFlowCompleted || !engine.account.loggedIn || engine.sheetURL == nil {
+                onboardingCard
+            }
+            sheetCard
+            workoutCard
+            observationsCard
+            syncCard
+            planCard
+            statusCard
+        }
+    }
+
+    private var onboardingCard: some View {
+        MetalSurface {
+            VStack(alignment: .leading, spacing: 13) {
+                SectionTitle(title: t("onboard.title"), symbol: "list.number")
+                Text(t("onboard.subtitle"))
+                    .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                onboardingStep(1, "onboard.health", engine.basicHealthFlowCompleted) {
+                    Task { await engine.authorizeHealth() }
+                }
+                onboardingStep(2, "onboard.google", engine.account.loggedIn) {
+                    Task { await engine.login() }
+                }
+                onboardingStep(3, "onboard.sheets", engine.sheetURL != nil) {
+                    Task { await engine.prepareGoogleSheet() }
+                }
+            }
+        }
+    }
+
+    private func onboardingStep(_ number: Int, _ key: String, _ completed: Bool,
+                                action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: completed ? "checkmark.circle.fill" : "\(number).circle")
+                    .foregroundStyle(completed ? Atelier.mint : Atelier.azure)
+                    .font(.system(size: 21))
+                Text(t(key)).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Atelier.ice)
+                Spacer()
+                if !completed { Image(systemName: "chevron.right").font(.system(size: 11)).foregroundStyle(Atelier.mist) }
+            }.padding(12)
+            .background(Atelier.midnight.opacity(0.42), in: RoundedRectangle(cornerRadius: 12))
+        }
+        .disabled(completed || (number == 3 && !engine.account.loggedIn))
+        .buttonStyle(PressFeedback())
+    }
+
+    private var sheetCard: some View {
+        MetalSurface {
+            VStack(alignment: .leading, spacing: 15) {
+                SectionTitle(title: t("sheet.title"), symbol: "tablecells")
+                HStack(spacing: 9) {
+                    Circle().fill(engine.sheetURL == nil ? Atelier.mist : Atelier.mint)
+                        .frame(width: 7, height: 7)
+                    Text(engine.sheetURL == nil ? t("sheet.notfound") : t("sheet.ready"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 if let url = engine.sheetURL {
                     Button { openURL(url) } label: {
-                        ActionLabel(title: "Saját Google Sheets megnyitása", symbol: "arrow.up.right.square")
+                        ActionLabel(title: t("sheet.open"), symbol: "arrow.up.right.square")
                     }.buttonStyle(PressFeedback())
-                    .accessibilityHint("Megnyitja a bejelentkezett fiókhoz létrehozott ÓraNapló-táblázatot")
                     Button { Task { await engine.prepareGoogleSheet() } } label: {
-                        ActionLabel(title: "Függő adatok feltöltése", symbol: "arrow.clockwise", primary: false, trailing: "chevron.right")
-                    }.disabled(engine.busy).buttonStyle(PressFeedback())
+                        ActionLabel(title: t("sheet.upload"), symbol: "arrow.clockwise", primary: false)
+                    }.buttonStyle(PressFeedback()).disabled(engine.busy)
                 } else if engine.account.loggedIn {
                     Button { Task { await engine.prepareGoogleSheet() } } label: {
-                        ActionLabel(title: "Google Sheets létrehozása", symbol: "plus.square.on.square")
-                    }.disabled(engine.busy).buttonStyle(PressFeedback())
+                        ActionLabel(title: t("sheet.create"), symbol: "plus.square.on.square")
+                    }.buttonStyle(PressFeedback()).disabled(engine.busy)
+                    Button { Task { await engine.findPreviousSheet() } } label: {
+                        ActionLabel(title: t("sheet.find"), symbol: "magnifyingglass", primary: false)
+                    }.buttonStyle(PressFeedback())
                 } else {
                     Button { Task { await engine.login() } } label: {
-                        ActionLabel(title: "Google-fiók csatlakoztatása", symbol: "person.crop.circle.badge.checkmark", trailing: "arrow.right")
+                        ActionLabel(title: t("sheet.login"), symbol: "person.crop.circle.badge.checkmark")
                     }.buttonStyle(PressFeedback())
                 }
+            }
+        }
+    }
+
+    private var workoutCard: some View {
+        MetalSurface {
+            VStack(alignment: .leading, spacing: 14) {
+                SectionTitle(title: t("workout.title"), symbol: "figure.run")
+                if let workout = engine.lastWorkout {
+                    HStack {
+                        Text(t(workout.kindKey)).font(.system(size: 19, weight: .bold, design: .rounded))
+                        Spacer()
+                        Text(formattedDate(workout.started))
+                            .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                    }
+                    HStack(spacing: 8) {
+                        statistic(t("workout.duration"), String(format: "%.0f %@", workout.seconds / 60, t("common.min")))
+                        statistic(t("workout.distance"), workout.distanceMeters.map { String(format: "%.2f km", $0 / 1000) } ?? t("common.noData"))
+                    }
+                    HStack(spacing: 8) {
+                        statistic(t("workout.hr.avg"), workout.averageBPM.map { String(format: "%.0f bpm", $0) } ?? t("workout.nohr"))
+                        statistic(t("workout.hr.range"), (workout.minBPM != nil && workout.maxBPM != nil) ? String(format: "%.0f–%.0f", workout.minBPM!, workout.maxBPM!) : t("common.noData"))
+                    }
+                    if subscriptions.proActive {
+                        HStack(spacing: 8) {
+                            statistic(t("workout.calories"), workout.energyKcal.map { String(format: "%.0f kcal", $0) } ?? t("common.noData"))
+                            statistic(t("workout.splits"), workout.hundredMeterSegments.map { String($0) } ?? t("workout.nogps"))
+                        }
+                    }
+                } else {
+                    Text(t("workout.none")).font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                }
+            }
+        }
+    }
+
+    private var observationsCard: some View {
+        MetalSurface {
+            VStack(alignment: .leading, spacing: 13) {
+                SectionTitle(title: t("attention.title"), symbol: "exclamationmark.circle")
+                if engine.observations.isEmpty {
+                    Text(t("attention.none")).font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                } else {
+                    ForEach(engine.observations) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "info.circle.fill").foregroundStyle(Atelier.azure)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(t(item.titleKey)).font(.system(size: 13, weight: .medium))
+                                Text(formattedDate(item.date)).font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                            }
+                        }
+                    }
+                }
+                Text(t("attention.disclaimer"))
+                    .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
     private var syncCard: some View {
         MetalSurface {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    SectionTitle(title: "Adatmentés", symbol: "arrow.triangle.2.circlepath")
-                    if engine.busy { ProgressView().tint(Atelier.azure) }
+            VStack(alignment: .leading, spacing: 14) {
+                SectionTitle(title: t("sync.title"), symbol: "arrow.triangle.2.circlepath")
+                HStack(spacing: 10) {
+                    statistic(t("sync.last"), engine.lastSync == "–" ? t("sync.never") : engine.lastSync)
+                    statistic(t("sync.pending"), String(engine.pendingCount))
                 }
-                HStack(spacing: 12) {
-                    smallValue(title: "Utolsó mentés", value: engine.lastSync == "–" ? "Még nincs" : "Elérhető")
-                    Rectangle().fill(Atelier.line).frame(width: 1, height: 42)
-                    smallValue(title: "Várakozó sorok", value: "\(engine.pendingCount)")
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle").foregroundStyle(Atelier.mint)
+                    Text(t("sync.uploaded") + ": " + String(engine.lastUploadedCount))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                }
+                if let last = engine.lastSuccessfulDate,
+                   Date().timeIntervalSince(last) > 24 * 3600 {
+                    Label(t("sync.stale"), systemImage: "clock.badge.exclamationmark")
+                        .font(.system(size: 11)).foregroundStyle(Atelier.azure)
                 }
                 Button { Task { await engine.sync() } } label: {
-                    ActionLabel(title: engine.busy ? "Szinkronizálás…" : "Egészségadatok szinkronizálása", symbol: "heart.text.square", primary: false, trailing: "arrow.clockwise")
-                }.disabled(engine.busy || !engine.account.loggedIn).buttonStyle(PressFeedback())
-                if !engine.fullHealthFlowCompleted {
-                    HStack(alignment: .top, spacing: 8) {
-                        Image(systemName: "exclamationmark.shield").foregroundStyle(Atelier.azure)
-                        Text("Ehhez engedélyezett HealthKit-hozzáférés kell. Az ingyenes Sideloadly-aláírásból ez hiányozhat.")
-                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
-                    }
-                }
+                    ActionLabel(title: engine.busy ? t("sync.running") : t("sync.action"), symbol: "arrow.clockwise", primary: false)
+                }.buttonStyle(PressFeedback()).disabled(engine.busy || !engine.account.loggedIn)
+                Text(t("sync.background"))
+                    .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                Text(t("sync.offline"))
+                    .font(.system(size: 11)).foregroundStyle(Atelier.mist)
             }
         }
     }
 
-    private func smallValue(title: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title).font(.system(size: 11)).foregroundStyle(Atelier.mist)
-            Text(value).font(.system(size: 16, weight: .semibold, design: .rounded)).foregroundStyle(.white)
-                .lineLimit(1).minimumScaleFactor(0.75)
-        }.frame(maxWidth: .infinity, alignment: .leading)
+    private var planCard: some View {
+        MetalSurface {
+            VStack(alignment: .leading, spacing: 13) {
+                SectionTitle(title: t("tier.current"), symbol: "checkmark.seal")
+                Text(subscriptions.proActive ? t("tier.pro") : t("tier.free"))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
+                Text(subscriptions.proActive ? t("tier.pro.desc") : t("tier.free.desc"))
+                    .font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                if !subscriptions.proActive {
+                    Divider().overlay(Atelier.line)
+                    Text(subscriptions.product.map { $0.displayPrice + " / " + t("metrics.365") } ?? t("tier.pro.price"))
+                        .font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
+                    Text(t("tier.price.note")).font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                    if subscriptions.product != nil {
+                        Button { Task { await subscriptions.purchase() } } label: {
+                            ActionLabel(title: t("tier.buy"), symbol: "crown")
+                        }.buttonStyle(PressFeedback()).disabled(subscriptions.busy)
+                    } else {
+                        Text(t("tier.unavailable")).font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    }
+                } else {
+                    Label(t("tier.verified"), systemImage: "checkmark.shield.fill")
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mint)
+                }
+                Text(t(subscriptions.messageKey))
+                    .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                Button { Task { await subscriptions.restore() } } label: {
+                    ActionLabel(title: t("tier.restore"), symbol: "arrow.counterclockwise", primary: false)
+                }.buttonStyle(PressFeedback()).disabled(subscriptions.busy)
+                if let url = URL(string: "https://apps.apple.com/account/subscriptions") {
+                    Button { openURL(url) } label: {
+                        ActionLabel(title: t("tier.manage"), symbol: "gearshape", primary: false)
+                    }.buttonStyle(PressFeedback())
+                }
+            }
+        }
     }
 
     private var statusCard: some View {
         MetalSurface {
             VStack(alignment: .leading, spacing: 12) {
-                SectionTitle(title: "Rendszerállapot", symbol: "checkmark.shield")
+                SectionTitle(title: t("settings.technical"), symbol: "checkmark.shield")
                 HStack(alignment: .top, spacing: 10) {
-                    Circle().fill(engine.busy ? Atelier.azure : Atelier.mint)
+                    Circle().fill(engine.syncHadError ? Color.orange : Atelier.mint)
                         .frame(width: 8, height: 8).padding(.top, 5)
-                    Text(engine.status)
-                        .font(.system(size: 13)).foregroundStyle(Atelier.ice.opacity(0.88))
-                        .fixedSize(horizontal: false, vertical: true)
+                    Text(t(statusKey)).font(.system(size: 13)).foregroundStyle(Atelier.ice)
                 }
-                if engine.busy {
-                    ProgressView().tint(Atelier.azure)
-                }
+                if engine.busy { ProgressView().tint(Atelier.azure) }
             }
         }
     }
 
+    private var statusKey: String {
+        if engine.busy { return "sync.status.busy" }
+        if engine.syncHadError { return "sync.status.error" }
+        if !engine.account.loggedIn { return "sync.status.connect" }
+        if !engine.basicHealthFlowCompleted { return "sync.status.health" }
+        return engine.lastSync == "–" ? "sync.status.ready" : "sync.status.done"
+    }
+
     private var measurements: some View {
         AppCanvas {
-            pageHeader(eyebrow: "ADATGYŰJTÉS", title: "Mérések", subtitle: "Válaszd ki, mely adatokat szeretnéd a saját táblázatodba menteni.")
+            heading(t("metrics.eyebrow"), t("metrics.title"), t("metrics.desc"))
             MetalSurface {
-                VStack(spacing: 14) {
-                    SectionTitle(title: "Adatkategóriák", symbol: "waveform.path.ecg")
+                VStack(alignment: .leading, spacing: 15) {
+                    SectionTitle(title: t("tab.metrics"), symbol: "waveform.path.ecg")
+                    HStack {
+                        Text(t("group.sziv")).font(.system(size: 14, weight: .medium))
+                        Spacer()
+                        Text(t("common.free")).font(.system(size: 11, weight: .bold)).foregroundStyle(Atelier.mint)
+                    }
+                    Divider().overlay(Atelier.line)
                     ForEach(Catalog.groups, id: \.0) { group in
-                        HStack(spacing: 12) {
-                            Image(systemName: groupIcon(group.0))
-                                .foregroundStyle(Atelier.azure)
-                                .frame(width: 26)
-                            Toggle(group.1, isOn: Binding(
+                        HStack(spacing: 11) {
+                            Image(systemName: categorySymbol(group.0)).foregroundStyle(Atelier.azure)
+                                .frame(width: 24)
+                            Toggle(t("group." + group.0), isOn: Binding(
                                 get: { engine.enabledGroups.contains(group.0) },
                                 set: { _ in engine.toggleGroup(group.0) }
                             ))
                             .tint(Atelier.azure)
-                            .font(.system(size: 14, weight: .medium))
+                            .disabled(!subscriptions.proActive)
+                            .font(.system(size: 14))
+                            if !subscriptions.proActive {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                            }
                         }
-                        if group.0 != Catalog.groups.last?.0 {
-                            Rectangle().fill(Atelier.line).frame(height: 1)
-                        }
+                    }
+                    if !subscriptions.proActive {
+                        Text(t("tier.free.only"))
+                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                     }
                 }
             }
             MetalSurface {
-                VStack(alignment: .leading, spacing: 16) {
-                    SectionTitle(title: "Korábbi adatok", symbol: "clock.arrow.circlepath")
-                    Text("Előzmények beolvasása").font(.system(size: 13)).foregroundStyle(Atelier.mist)
-                    Picker("Időszak", selection: Binding(get: { engine.selectedDays }, set: { engine.setDays($0) })) {
-                        Text("30 nap").tag(30)
-                        Text("1 év").tag(365)
-                        Text("5 év").tag(1825)
-                    }.pickerStyle(.segmented)
-                    Text("Első próbához 30 napot ajánlunk. Hosszabb időszakban sok mérés gyűlhetett össze.")
-                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(title: t("metrics.history"), symbol: "clock.arrow.circlepath")
+                    Picker(t("metrics.period"), selection: Binding(get: { engine.selectedDays }, set: { engine.setDays($0) })) {
+                        Text(t("metrics.30")).tag(30)
+                        Text(t("metrics.365")).tag(365)
+                        Text(t("metrics.1825")).tag(1825)
+                    }.pickerStyle(.segmented).disabled(!subscriptions.proActive)
                     Button { Task { await engine.sync() } } label: {
-                        ActionLabel(title: "Adatok mentése Google Sheetsbe", symbol: "arrow.up.doc", trailing: "arrow.clockwise")
-                    }.disabled(engine.busy || !engine.account.loggedIn).buttonStyle(PressFeedback())
+                        ActionLabel(title: t("metrics.import"), symbol: "square.and.arrow.down", trailing: "arrow.clockwise")
+                    }.buttonStyle(PressFeedback())
+                        .disabled(engine.busy || !engine.account.loggedIn || !subscriptions.proActive)
+                    Text(t(subscriptions.proActive ? "metrics.import.note" : "metrics.pro.lock"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                 }
-            }
-            if !engine.fullHealthFlowCompleted {
-                Text("A HealthKit hozzáférés beállítását a Beállítások fülön találod.")
-                    .font(.system(size: 12)).foregroundStyle(Atelier.mist).padding(.horizontal, 4)
             }
         }
     }
 
     private var journal: some View {
         AppCanvas {
-            pageHeader(eyebrow: "SZEMÉLYES NAPLÓ", title: "Jegyezd fel.", subtitle: "Az eseményeket időbélyeggel a saját Naplo-munkalapodra mentjük.")
+            heading(t("journal.eyebrow"), t("journal.title"), t("journal.desc"))
             MetalSurface {
-                VStack(alignment: .leading, spacing: 17) {
-                    SectionTitle(title: "Új bejegyzés", symbol: "square.and.pencil")
-                    Picker("Bejegyzés típusa", selection: $journalKind) {
-                        Text("Közérzet").tag("Közérzet")
-                        Text("Gyógyszer").tag("Gyógyszerbevétel")
-                        Text("Egyéb").tag("Egyéb")
+                VStack(alignment: .leading, spacing: 15) {
+                    Picker(t("journal.title"), selection: $journalKind) {
+                        Text(t("journal.mood")).tag("journal.mood")
+                        Text(t("journal.medication")).tag("journal.medication")
+                        Text(t("journal.other")).tag("journal.other")
                     }.pickerStyle(.segmented)
                     ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 16).fill(.white.opacity(0.055))
+                        RoundedRectangle(cornerRadius: 16).fill(Atelier.midnight.opacity(0.5))
                         if journalText.isEmpty {
-                            Text("Mi történt? Írj egy rövid feljegyzést…")
-                                .font(.system(size: 14)).foregroundStyle(Atelier.mist.opacity(0.7))
-                                .padding(.horizontal, 15).padding(.vertical, 16)
+                            Text(t("journal.placeholder"))
+                                .foregroundStyle(Atelier.mist).padding(14)
                         }
                         TextEditor(text: $journalText)
                             .scrollContentBackground(.hidden)
-                            .font(.system(size: 14))
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 10)
-                            .frame(minHeight: 126)
-                    }.frame(minHeight: 126)
-                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Atelier.line))
+                            .padding(9).frame(height: 135)
+                    }.frame(height: 135)
                     Button {
-                        let note = journalText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !note.isEmpty else { return }
+                        let value = journalText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !value.isEmpty else { return }
                         journalText = ""
-                        Task { await engine.addJournalEntry(kind: journalKind, note: note) }
+                        Task { await engine.addJournalEntry(kind: t(journalKind), note: value) }
                     } label: {
-                        ActionLabel(title: "Naplóbejegyzés mentése", symbol: "square.and.arrow.down", trailing: "checkmark")
-                    }.disabled(!engine.account.loggedIn || journalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .buttonStyle(PressFeedback())
-                    if !engine.account.loggedIn {
-                        Text("A napló használatához először csatlakoztasd a Google-fiókodat.")
-                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                        ActionLabel(title: t("journal.save"), symbol: "square.and.arrow.down")
+                    }.buttonStyle(PressFeedback())
+                        .disabled(!subscriptions.proActive || !engine.account.loggedIn || journalText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if !subscriptions.proActive {
+                        Text(t("tier.free.only")).font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    } else if !engine.account.loggedIn {
+                        Text(t("journal.needgoogle")).font(.system(size: 12)).foregroundStyle(Atelier.mist)
                     }
                 }
             }
             if let url = engine.sheetURL {
                 Button { openURL(url) } label: {
-                    ActionLabel(title: "Naplóm megnyitása Google Sheetsben", symbol: "tablecells", primary: false)
+                    ActionLabel(title: t("sheet.open"), symbol: "tablecells", primary: false)
                 }.buttonStyle(PressFeedback())
             }
         }
@@ -443,79 +553,120 @@ struct ContentView: View {
 
     private var settings: some View {
         AppCanvas {
-            pageHeader(eyebrow: "BEÁLLÍTÁSOK", title: "A te rendszered.", subtitle: "Hozzáférések, fiók és műszaki állapot.")
+            heading(t("settings.eyebrow"), t("settings.title"), t("settings.desc"))
             MetalSurface {
-                VStack(alignment: .leading, spacing: 15) {
-                    SectionTitle(title: "Google-fiók", symbol: "person.crop.circle")
-                    Text(engine.account.loggedIn ? engine.account.email : "Nincs csatlakoztatott Google-fiók")
-                        .font(.system(size: 13)).foregroundStyle(Atelier.mist)
-                    if engine.account.loggedIn {
-                        Button { Task { await engine.disconnectGoogle() } } label: {
-                            ActionLabel(title: "Fiók leválasztása", symbol: "rectangle.portrait.and.arrow.right", primary: false, trailing: "chevron.right")
-                        }.buttonStyle(PressFeedback())
-                    } else {
-                        Button { Task { await engine.login() } } label: {
-                            ActionLabel(title: "Google-fiók csatlakoztatása", symbol: "person.crop.circle.badge.checkmark")
-                        }.buttonStyle(PressFeedback())
-                    }
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionTitle(title: t("settings.language"), symbol: "globe")
+                    Picker(t("settings.language"), selection: $languageCode) {
+                        Text(t("settings.hu")).tag("hu")
+                        Text(t("settings.en")).tag("en")
+                        Text(t("settings.de")).tag("de")
+                    }.pickerStyle(.segmented)
+                }
+            }
+            MetalSurface {
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionTitle(title: t("sheet.account"), symbol: "person.crop.circle")
+                    Text(engine.account.loggedIn ? engine.account.email : t("sheet.noaccount"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    Button {
+                        Task {
+                            if engine.account.loggedIn { await engine.disconnectGoogle() }
+                            else { await engine.login() }
+                        }
+                    } label: {
+                        ActionLabel(title: t(engine.account.loggedIn ? "sheet.disconnect" : "sheet.login"),
+                                    symbol: "person.crop.circle", primary: false)
+                    }.buttonStyle(PressFeedback())
                     if let url = engine.sheetURL {
                         Button { openURL(url) } label: {
-                            ActionLabel(title: "Saját Google Sheets megnyitása", symbol: "tablecells", primary: false)
+                            ActionLabel(title: t("sheet.open"), symbol: "tablecells", primary: false)
                         }.buttonStyle(PressFeedback())
                     }
                 }
             }
             MetalSurface {
-                VStack(alignment: .leading, spacing: 15) {
-                    SectionTitle(title: "Apple Egészség", symbol: "heart.text.square")
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionTitle(title: t("settings.health"), symbol: "heart.text.square")
                     Button { Task { await engine.authorizeHealth() } } label: {
-                        ActionLabel(title: "Pulzusengedély ellenőrzése", symbol: "heart", primary: false, trailing: "chevron.right")
+                        ActionLabel(title: t("settings.health.pulse"), symbol: "heart", primary: false)
                     }.buttonStyle(PressFeedback())
                     Button { Task { await engine.authorizeAllHealth() } } label: {
-                        ActionLabel(title: "Teljes HealthKit engedélyezése", symbol: "checkmark.shield", primary: false, trailing: "chevron.right")
-                    }.disabled(!engine.basicHealthFlowCompleted).buttonStyle(PressFeedback())
-                    Text("A teljes hozzáférés csak sikeres alapteszt után kérhető. Ingyenes Sideloadly-aláírásból hiányozhat a HealthKit-jogosultság.")
+                        ActionLabel(title: t("settings.health.full"), symbol: "checkmark.shield", primary: false)
+                    }.buttonStyle(PressFeedback())
+                        .disabled(!subscriptions.proActive || !engine.basicHealthFlowCompleted)
+                    Text(t(subscriptions.proActive ? "settings.health.sideload" : "settings.health.pro"))
                         .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                 }
             }
+            planCard
             MetalSurface {
-                VStack(alignment: .leading, spacing: 12) {
-                    SectionTitle(title: "Diagnosztika", symbol: "stethoscope")
-                    Text("Legutóbbi művelet: \(CrashCheckpoint.last)")
-                        .font(.system(size: 12)).foregroundStyle(Atelier.ice)
-                    Text(CrashCheckpoint.environmentSummary)
-                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(Atelier.mist)
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionTitle(title: t("settings.diagnostics"), symbol: "stethoscope")
                     Button {
-                        let id = Bundle.main.bundleIdentifier ?? "ismeretlen"
-                        UIPasteboard.general.string = "ÓraNapló diagnosztika\nApp ID: \(id)\nUtolsó lépés: \(CrashCheckpoint.last)\n\(CrashCheckpoint.environmentSummary)"
-                        engine.status = "Diagnosztika a vágólapra másolva."
+                        showTechnicalDetails.toggle()
                     } label: {
-                        ActionLabel(title: "Diagnosztika másolása", symbol: "doc.on.doc", primary: false, trailing: "checkmark")
+                        ActionLabel(title: t("settings.showTechnical"), symbol: "chevron.down", primary: false)
+                    }.buttonStyle(PressFeedback())
+                    if showTechnicalDetails {
+                        Text(CrashCheckpoint.last)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(Atelier.mist)
+                        Text(CrashCheckpoint.environmentSummary)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Atelier.mist)
+                            .textSelection(.enabled)
+                    }
+                    Button {
+                        UIPasteboard.general.string = "ÓraNapló / " + t("settings.diagnostics") + "\n" +
+                            CrashCheckpoint.last + "\n" + CrashCheckpoint.environmentSummary +
+                            "\n" + engine.status + "\n" + subscriptions.technicalError
+                    } label: {
+                        ActionLabel(title: t("settings.copy"), symbol: "doc.on.doc", primary: false)
                     }.buttonStyle(PressFeedback())
                 }
             }
             MetalSurface {
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionTitle(title: "Tudnivalók", symbol: "info.circle")
-                    Text("A 100 méteres sportelemzéshez megfelelő GPS-útvonal és tényleges pulzusmérések szükségesek. A szinkronizálás időpontját az iOS szabályozza.")
-                    Text("Apple Watch akkumulátor, alkalmazásonkénti képernyőidő és szoba CO₂ nem olvasható ki közvetlenül a HealthKitből.")
-                    Text("Az alkalmazás nem orvosi diagnosztikai eszköz.")
+                VStack(alignment: .leading, spacing: 9) {
+                    SectionTitle(title: t("settings.help"), symbol: "info.circle")
+                    Text(t("settings.limit"))
+                    Text(t("settings.note"))
+                    Text(t("settings.privacy"))
                 }.font(.system(size: 12)).foregroundStyle(Atelier.mist)
             }
         }
     }
 
-    private func pageHeader(eyebrow: String, title: String, subtitle: String) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            MicroHeading(text: eyebrow)
-            Text(title).font(.system(size: 32, weight: .bold, design: .rounded))
-                .tracking(-0.9).foregroundStyle(.white)
-            Text(subtitle).font(.system(size: 14)).foregroundStyle(Atelier.mist)
+    private func statistic(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 10)).foregroundStyle(Atelier.mist)
                 .fixedSize(horizontal: false, vertical: true)
-        }.padding(.bottom, 10)
+            Text(value).font(.system(size: 15, weight: .semibold, design: .rounded))
+                .foregroundStyle(.white).lineLimit(2).minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Atelier.midnight.opacity(0.4), in: RoundedRectangle(cornerRadius: 13))
     }
 
-    private func groupIcon(_ key: String) -> String {
+    private func heading(_ eyebrow: String, _ title: String, _ subtitle: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            MicroHeading(text: eyebrow)
+            Text(title).font(.system(size: 33, weight: .bold, design: .rounded))
+            Text(subtitle).font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                .fixedSize(horizontal: false, vertical: true)
+        }.padding(.bottom, 7)
+    }
+
+    private func formattedDate(_ date: Date) -> String {
+        let format = DateFormatter()
+        format.locale = Locale(identifier: languageCode)
+        format.dateStyle = .medium
+        format.timeStyle = .short
+        return format.string(from: date)
+    }
+
+    private func categorySymbol(_ key: String) -> String {
         switch key {
         case "sziv": return "heart"
         case "alvas": return "moon.stars"

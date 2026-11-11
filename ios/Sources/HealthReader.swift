@@ -19,6 +19,9 @@ final class HealthReader {
                 throw SyncError.config("Pulzus HealthKit-típus nem érhető el")
             }
             types.insert(rate)
+            // Free mode may show the most recent workout *in-app*; it does not
+            // export those records to Sheets and does not require Pro to read.
+            types.insert(HKObjectType.workoutType())
         } else {
             for metric in Catalog.metrics { if let t = metric.sampleType { types.insert(t) } }
             types.insert(HKObjectType.workoutType())
