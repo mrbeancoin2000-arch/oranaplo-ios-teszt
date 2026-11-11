@@ -3,6 +3,7 @@ from pathlib import Path
 import csv, json, re, unittest
 ROOT=Path(__file__).resolve().parents[1]
 S=ROOT/'ios/Sources'
+FIXTURES=ROOT/'tests/fixtures/qa_061'  # Synthetic CI fixtures, never real 7-day logs
 
 class ReleaseSafety061(unittest.TestCase):
     def test_pro_expiry_does_not_drop_queued_health_data(self):
@@ -47,18 +48,25 @@ class ReleaseSafety061(unittest.TestCase):
         self.assertNotIn('continue-on-error: true',ipa_ci)
         self.assertIn('WatchKit alkalmazás', (ROOT/'tools/verify_ipa.py').read_text('utf8'))
 
-    def test_qa_status_all_not_run_without_evidence(self):
-        data=json.loads((ROOT/'docs/QA_061/QA_STATUS.json').read_text('utf8'))
+    def test_qa_status_template_is_unverified_without_evidence(self):
+        data=json.loads((FIXTURES/'QA_STATUS_TEMPLATE.json').read_text('utf8'))
         self.assertEqual(len(data['tests']),15)
         for item in data['tests'].values():
             self.assertEqual(item['status'],'NOT_RUN')
             self.assertFalse(item['evidence'])
 
-    def test_seven_day_log_has_fourteen_checkpoints(self):
-        with (ROOT/'docs/QA_061/NAPI_SZINKRON_NAPLO.csv').open(encoding='utf-8-sig',newline='') as f:
+    def test_seven_day_blank_log_template_has_fourteen_checkpoints(self):
+        with (FIXTURES/'NAPI_SZINKRON_NAPLO_TEMPLATE.csv').open(encoding='utf-8-sig',newline='') as f:
             rows=list(csv.DictReader(f,delimiter=';'))
         self.assertEqual(len(rows),14)
         self.assertEqual(sorted(set(row['nap'] for row in rows)),list('1234567'))
+
+    def test_ci_upload_includes_synthetic_qa_templates_only(self):
+        upload=(ROOT/'tools/cloud_build.ps1').read_text('utf-8')
+        self.assertIn("Add-Approved 'tests\\fixtures\\qa_061\\NAPI_SZINKRON_NAPLO_TEMPLATE.csv'",upload)
+        self.assertIn('verify_ci_staging.py',upload)
+        self.assertNotIn("Add-Approved 'docs\\QA_061\\NAPI_SZINKRON_NAPLO.csv'",upload)
+        self.assertNotIn("Add-Approved 'docs\\QA_061\\QA_STATUS.json'",upload)
 
     def test_no_private_keys_needed_for_test_runner(self):
         script=(ROOT/'tools/live_supabase_rls_test.py').read_text('utf8')

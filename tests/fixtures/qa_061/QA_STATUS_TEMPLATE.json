@@ -1,0 +1,96 @@
+{
+  "build": "0.6.1",
+  "date_created": "2026-11-11",
+  "tests": {
+    "ios_sdk_build": {
+      "description": "iOS-szimulátor SwiftUI Xcode build (GitHub Actions log)",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "watchos_sdk_build": {
+      "description": "watchOS-szimulátor build és embed (GitHub Actions log)",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "google_new_account": {
+      "description": "Új Google-fiók OAuth + saját Sheet; fiókváltás",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "healthkit_real": {
+      "description": "Valódi HealthKit pulzus/HRV iPhone-on",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "sync_7_days": {
+      "description": "Minimum 7 napon át naplózott, hiánytalan Sheets-szinkron",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "gps_locked_background": {
+      "description": "Lezárt iPhone háttér GPS próba",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "watch_to_iphone": {
+      "description": "Apple Watch valódi edzés és offline összesítés átadás",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "large_import_unique": {
+      "description": "Nagy előzményimport és duplikációmentes megszakítás/helyreállítás",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "supabase_rls": {
+      "description": "Supabase RLS két valódi JWT-vel; tulajdonjog",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "storekit_local": {
+      "description": "Xcode StoreKit helyi vásárlás/lejárat/Restore",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "storekit_sandbox": {
+      "description": "Apple StoreKit Sandbox végponttól végpontig",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "locales_hu_en_de": {
+      "description": "Magyar-angol-német teljes eszközös felület",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "testflight_20": {
+      "description": "20 külső TestFlight tesztelő tényleges kipróbálással",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "security_privacy": {
+      "description": "Biztonság, adatkezelés, kulcsvédelem, RLS + törlés",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    },
+    "zero_known_critical": {
+      "description": "0 nyitott kritikus adatvesztési vagy fizetési hiba",
+      "status": "NOT_RUN",
+      "evidence": "",
+      "notes": ""
+    }
+  }
+}

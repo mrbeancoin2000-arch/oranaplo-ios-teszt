@@ -56,6 +56,9 @@ $projectRoot = (Get-Location).Path.TrimEnd('\','/')
 $stage = Join-Path ([System.IO.Path]::GetTempPath()) ('OraNaplo-SafePush-' + [Guid]::NewGuid().ToString('N'))
 try {
  Invoke-Checked { git clone "https://github.com/$fullRepo.git" $stage } 'GitHub tarolo letoltese sikertelen'
+ # Private QA progress must never survive from an older public remote commit.
+ $privateQAStage = Join-Path $stage 'docs\QA_061'
+ if (Test-Path -LiteralPath $privateQAStage) { Remove-Item -LiteralPath $privateQAStage -Recurse -Force }
  # An empty, newly created repo may have no commits yet. Create the main ref.
  & git -C $stage symbolic-ref HEAD refs/heads/main
  if ($LASTEXITCODE -ne 0) { throw 'Nem sikerult beallitani a main agat' }
@@ -90,10 +93,13 @@ try {
  Add-ByExtension 'tools' @('.ps1','.py','.sh') $false
  Add-ByExtension 'watchOS' @('.swift','.plist','.entitlements') $true
  Add-ByExtension 'tests' @('.py','.html','.swift','.js','.mjs','.xml','.json','.storekit') $true
+ # Only synthetic, intentionally blank CSV fixture. NEVER upload real QA logs.
+ Add-Approved 'tests\fixtures\qa_061\NAPI_SZINKRON_NAPLO_TEMPLATE.csv'
  Add-ByExtension 'scripts' @('.gs','.js','.json') $true
  Add-ByExtension 'supabase' @('.sql','.md','.ts','.mjs','.toml') $true
  Add-ByExtension 'website' @('.html','.css','.js','.svg','.txt') $true
- Add-ByExtension 'docs' @('.md') $true
+ # Public top-level guides only. Never sync the local docs/QA_061 progress folder.
+ Add-ByExtension 'docs' @('.md') $false
  if ($approved.Count -lt 10) { throw "Tulsagosan keves jovahagyott forrasfajl: $($approved.Count)" }
  foreach ($rel in ($approved | Select-Object -Unique)) {
   $dest = Join-Path $stage $rel
@@ -101,6 +107,9 @@ try {
   if (-not (Test-Path -LiteralPath $parent)) { New-Item -Path $parent -ItemType Directory -Force | Out-Null }
   Copy-Item -LiteralPath (Join-Path $projectRoot $rel) -Destination $dest -Force
  }
+ # Catch missing files before GitHub Actions, and reject private QA data.
+ & python (Join-Path $projectRoot 'tools\verify_ci_staging.py') $stage
+ if ($LASTEXITCODE -ne 0) { throw 'GitHub stage elokeszites sikertelen: szintetikus QA mintak vagy fajlok hianyoznak.' }
  Write-Output "Jovahagyott fajlok szama: $($approved.Count). Google-jelszo, OAuth-token, helyi log es egeszsegadat nem kerul feltoltesre."
  Invoke-Checked { git -C $stage add --all } 'git add hiba'
  $oldPreference = $ErrorActionPreference
