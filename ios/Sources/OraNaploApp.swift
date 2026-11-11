@@ -15,6 +15,7 @@ struct OraNaploApp: App {
                 .preferredColorScheme(.dark)
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
                 .task {
+                    OraUsageClock.register()
                     await engine.bootstrap()
                     _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 }
@@ -172,6 +173,9 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var subscriptions = SubscriptionManager.shared
+    @ObservedObject private var rankings = LeaderboardService.shared
+    @ObservedObject private var tracker = RunTracker.shared
+    @AppStorage("oranaplo.leaderboard.name") private var rankingName = ""
     @AppStorage("oranaplo.app.language") private var languageCode = "hu"
     @State private var selectedTab = 0
     @State private var journalKind = "journal.mood"
@@ -189,11 +193,11 @@ struct ContentView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            home.tabItem { Label(t("tab.home"), systemImage: "square.grid.2x2") }.tag(0)
-            RunTrackerView().tabItem { Label(t("tab.run"), systemImage: "figure.run") }.tag(5)
-            measurements.tabItem { Label(t("tab.metrics"), systemImage: "waveform.path.ecg") }.tag(1)
-            healthProfilePage.tabItem { Label(t("tab.profile"), systemImage: "person.crop.rectangle") }.tag(3)
-            settings.tabItem { Label(t("tab.settings"), systemImage: "slider.horizontal.3") }.tag(4)
+            TodayDashboardView().tabItem { Label(NewScreenText.t("tab.today",language),systemImage:"house.fill") }.tag(0)
+            AnalysisDashboardView().tabItem { Label(NewScreenText.t("tab.analysis",language),systemImage:"chart.bar.xaxis") }.tag(1)
+            RunTrackerView().tabItem { Label(t("tab.run"),systemImage:"figure.run") }.tag(2)
+            LeaderboardDashboardView().tabItem { Label(NewScreenText.t("tab.leaderboard",language),systemImage:"trophy") }.tag(3)
+            profileHub.tabItem { Label(NewScreenText.t("tab.profile.new",language),systemImage:"person.crop.circle") }.tag(4)
         }
         .tint(Atelier.azure)
         .toolbarBackground(Atelier.graphite, for: .tabBar)
@@ -212,6 +216,115 @@ struct ContentView: View {
             case .failure:
                 // A cancelled or failed picker must never create a health export.
                 break
+            }
+        }
+    }
+
+    // The five main tabs keep advanced legacy screens accessible without deleting functionality.
+    private var profileHub: some View {
+        NavigationStack {
+            AppCanvas {
+                heading("ÓraNapló",NewScreenText.t("profile.title",language),NewScreenText.t("profile.personal",language))
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:13) {
+                        SectionTitle(title:NewScreenText.t("profile.google",language),symbol:"person.crop.circle")
+                        Text(engine.account.loggedIn ? engine.account.email : NewScreenText.t("profile.notConnected",language))
+                            .font(.caption).foregroundStyle(Atelier.mist)
+                        Button {
+                            Task {
+                                if engine.account.loggedIn { await engine.disconnectGoogle() }
+                                else { await engine.login() }
+                            }
+                        } label: {
+                            ActionLabel(title:NewScreenText.t(engine.account.loggedIn ? "profile.logout" : "profile.connect",language),
+                                        symbol:"person.crop.circle.badge.checkmark")
+                        }.buttonStyle(PressFeedback())
+                    }
+                }
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:12) {
+                        SectionTitle(title:NewScreenText.t("profile.health",language),symbol:"heart.text.square")
+                        Text(NewScreenText.t("profile.health.note",language))
+                            .font(.caption).foregroundStyle(Atelier.mist)
+                        Button {
+                            Task {
+                                if !engine.basicHealthFlowCompleted { await engine.authorizeHealth() }
+                                await engine.authorizeAllHealth()
+                                await DailyHealthDashboard.shared.refresh()
+                            }
+                        } label: {
+                            ActionLabel(title:NewScreenText.t("profile.health.request",language),symbol:"checkmark.shield",primary:false)
+                        }.buttonStyle(PressFeedback())
+                        Text(t("settings.health.readFree"))
+                        .font(.caption2).foregroundStyle(Atelier.mist)
+                    }
+                }
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:11) {
+                        SectionTitle(title:NewScreenText.t("profile.nickname",language),symbol:"pencil.line")
+                        TextField(NewScreenText.t("profile.nickname",language),text:$rankingName)
+                            .textInputAutocapitalization(.words)
+                            .autocorrectionDisabled()
+                            .padding(13).background(Atelier.midnight,in:RoundedRectangle(cornerRadius:13))
+                        Text(NewScreenText.t("profile.nameHint",language))
+                            .font(.caption2).foregroundStyle(Atelier.mist)
+                        Text(NewScreenText.t("profile.nameSaved",language))
+                            .font(.caption2).foregroundStyle(Atelier.mist)
+                        Button {
+                            Task { await rankings.publish(name:rankingName); await rankings.refresh(mode:.steps) }
+                        } label: {
+                            ActionLabel(title:NewScreenText.t("leader.publish",language),symbol:"trophy",primary:false)
+                        }.buttonStyle(PressFeedback()).disabled(!rankings.isConfigured || rankings.busy)
+                        if rankings.published {
+                            Button { Task { await rankings.revoke() } } label: {
+                                ActionLabel(title:NewScreenText.t("leader.revoke",language),symbol:"person.crop.circle.badge.minus",primary:false)
+                            }.buttonStyle(PressFeedback()).disabled(rankings.busy)
+                        }
+                        if !rankings.messageKey.isEmpty {
+                            Text(NewScreenText.t(rankings.messageKey,language))
+                                .font(.caption).foregroundStyle(Atelier.mist)
+                        }
+                        Text(NewScreenText.t("leader.privacy",language))
+                            .font(.caption2).foregroundStyle(Atelier.mist)
+                    }
+                }
+                MetalSurface {
+                    VStack(alignment:.leading,spacing:10) {
+                        SectionTitle(title:NewScreenText.t("profile.records",language),symbol:"trophy")
+                        HStack {
+                            Text(NewScreenText.t("profile.longest",language))
+                            Spacer()
+                            Text(String(format:"%.2f km",tracker.longestCompletedRunMeters/1000))
+                                .fontWeight(.bold)
+                        }.font(.subheadline)
+                        if tracker.personalRecords.isEmpty {
+                            Text(NewScreenText.t("profile.noRecords",language))
+                                .font(.caption).foregroundStyle(Atelier.mist)
+                        }
+                        ForEach(tracker.personalRecords) { record in
+                            HStack {
+                                Text(String(format:"%.2f km",Double(record.distanceMeters)/1000))
+                                Spacer()
+                                Text(RunFormatting.duration(record.seconds)).fontWeight(.semibold)
+                            }.font(.subheadline)
+                        }
+                    }
+                }
+                Button { showJournal = true } label: {
+                    ActionLabel(title:t("journal.title"),symbol:"square.and.pencil",primary:false)
+                }.buttonStyle(PressFeedback())
+                NavigationLink {
+                    healthProfilePage
+                } label: {
+                    ActionLabel(title:NewScreenText.t("profile.advanced",language),symbol:"heart.text.square",primary:false)
+                }.buttonStyle(PressFeedback())
+                NavigationLink {
+                    settings
+                } label: {
+                    ActionLabel(title:NewScreenText.t("profile.settings",language),symbol:"gearshape",primary:false)
+                }.buttonStyle(PressFeedback())
+                Text(NewScreenText.t("profile.publishConsent",language))
+                    .font(.caption2).foregroundStyle(Atelier.mist)
             }
         }
     }
@@ -759,8 +872,8 @@ struct ContentView: View {
                     Button { Task { await engine.authorizeAllHealth() } } label: {
                         ActionLabel(title: t("settings.health.full"), symbol: "checkmark.shield", primary: false)
                     }.buttonStyle(PressFeedback())
-                        .disabled(!subscriptions.proActive || !engine.basicHealthFlowCompleted)
-                    Text(t(subscriptions.proActive ? "settings.health.sideload" : "settings.health.pro"))
+                        .disabled(!engine.basicHealthFlowCompleted)
+                    Text(t("settings.health.readFree"))
                         .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                 }
             }

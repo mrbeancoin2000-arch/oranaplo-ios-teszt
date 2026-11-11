@@ -13,6 +13,7 @@ enum L10n {
 
     static let strings: [String: [String: String]] = [
         "hu": [
+            "settings.health.readFree": "A teljes olvasási engedély ingyen is kérhető; a Google Sheetsbe csak pulzus exportálódik Pro nélkül.",
             "run.goals.title": "Heti és havi futáscélok",
             "run.goals.streak": "heti sorozat",
             "run.goals.monthly": "Havi táv:",
@@ -313,6 +314,7 @@ enum L10n {
             "common.min": "perc",
         ],
         "en": [
+            "settings.health.readFree": "Full Health read permission is available for free; without Pro only heart rate is exported to Google Sheets.",
             "run.goals.title": "Weekly and monthly running goals",
             "run.goals.streak": "week streak",
             "run.goals.monthly": "This month:",
@@ -613,6 +615,7 @@ enum L10n {
             "common.min": "min",
         ],
         "de": [
+            "settings.health.readFree": "Die Leseberechtigung für alle Health-Daten ist kostenlos; ohne Pro wird nur der Puls zu Google Sheets exportiert.",
             "run.goals.title": "Wöchentliche und monatliche Laufziele",
             "run.goals.streak": "Wochen in Folge",
             "run.goals.monthly": "Diesen Monat:",

@@ -9,7 +9,7 @@ struct RunTrackerView: View {
     @ObservedObject private var watch = WatchBridge.shared
     @EnvironmentObject private var engine: SyncEngine
     @AppStorage("oranaplo.app.language") private var languageCode = "hu"
-    @State private var camera: MapCameraPosition = .automatic
+    @State private var camera: MapCameraPosition = .userLocation(followsHeading:false,fallback:.automatic)
     @State private var manualWeight = ""
     @State private var weeklyGoalText = ""
     @State private var shareCardURL: URL?
@@ -121,14 +121,17 @@ struct RunTrackerView: View {
                         .background(.ultraThinMaterial,in:Capsule()).padding(10)
                 }
             } else {
-                VStack(spacing:14) {
-                    Image(systemName:"location.north.line.fill").font(.system(size:35)).foregroundStyle(blue)
-                    Text(t("run.map.waiting"))
-                        .font(.subheadline).multilineTextAlignment(.center)
-                        .foregroundStyle(.white.opacity(0.7))
-                }
-                .frame(maxWidth:.infinity).frame(height:195)
-                .background(Color.black.opacity(0.2),in:RoundedRectangle(cornerRadius:19))
+                ZStack(alignment:.bottomTrailing) {
+                    Map(position:$camera) { UserAnnotation() }
+                        .mapStyle(.standard(elevation:.realistic))
+                        .frame(height:265)
+                    Button { tracker.requestMapPosition() } label: {
+                        Label(t("run.map.gps"),systemImage:"location.fill")
+                            .font(.caption.weight(.semibold))
+                            .padding(10).background(.ultraThinMaterial,in:Capsule())
+                    }.padding(12)
+                }.clipShape(RoundedRectangle(cornerRadius:19))
+                Text(t("run.map.waiting")).font(.caption).foregroundStyle(.white.opacity(0.65))
             }
         }.padding(16).background(card,in:RoundedRectangle(cornerRadius:23))
     }

@@ -31,6 +31,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     private var stepSegmentStart: Date?
     private var lastCheckpoint = Date.distantPast
     private var pendingStart = false
+    private var pendingMapPreview = false
     private var lastPowerConfiguration = Date.distantPast
     @Published private(set) var recentlyBrokenRecords: [RunPersonalRecord] = []
     @Published private(set) var archivedRecords: [RunPersonalRecord] = []
@@ -76,6 +77,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         return result
     }
     var lastCompleted: RecordedRun? { history.first(where: { $0.completed }) }
+    var longestCompletedRunMeters: Double { longTermRuns.values.map(\.gpsMeters).max() ?? 0 }
     var personalRecords: [RunPersonalRecord] { archivedRecords.sorted { $0.distanceMeters < $1.distanceMeters } }
     var weeklySummary: RunGoalSummary {
         let stored = UserDefaults.standard.double(forKey:"oranaplo.run.weeklyGoalKM")
@@ -145,6 +147,15 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         if force || Date().timeIntervalSince(lastCheckpoint) > 5 {
             lastCheckpoint = Date(); persist()
         }
+    }
+
+    /// GPS preview is separate from starting an exercise; no route is recorded here.
+    func requestMapPosition() {
+        guard CLLocationManager.locationServicesEnabled() else { message="run.status.locationOff";return }
+        let status=manager.authorizationStatus
+        if status == .notDetermined { pendingMapPreview = true; manager.requestWhenInUseAuthorization() }
+        else if status == .authorizedWhenInUse || status == .authorizedAlways { manager.requestLocation() }
+        else { message="run.status.permissionDenied" }
     }
 
     func requestPermissionAndStart(kilograms: Double?, centimeters: Double?) {
@@ -353,6 +364,12 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         Task { @MainActor in
             self.authorization = manager.authorizationStatus
+            if self.pendingMapPreview {
+                self.pendingMapPreview = false
+                if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {
+                    manager.requestLocation()
+                }
+            }
             if self.pendingStart {
                 self.pendingStart = false
                 if manager.authorizationStatus == .authorizedAlways || manager.authorizationStatus == .authorizedWhenInUse {

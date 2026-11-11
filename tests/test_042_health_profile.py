@@ -35,7 +35,8 @@ class HealthProfileTests(unittest.TestCase):
             blocks[language]=set(re.findall(r'^\s+"([\w.]+)":',m.group(1),re.M))
         self.assertEqual(blocks['hu'],blocks['en'])
         self.assertEqual(blocks['en'],blocks['de'])
-        self.assertIn('healthProfilePage.tabItem',ui)
+        self.assertIn('healthProfilePage',ui)
+        self.assertIn('profileHub.tabItem',ui)
         self.assertIn('tag(4)',ui)
         self.assertTrue({'profile.alert.bp.urgent.title','profile.alert.steps.body','profile.water.all','profile.export.confirm.message'}.issubset(blocks['de']))
 

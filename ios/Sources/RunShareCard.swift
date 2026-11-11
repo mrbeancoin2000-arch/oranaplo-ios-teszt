@@ -67,6 +67,12 @@ enum RunShareCard {
             text(run.started.formatted(date:.abbreviated,time:.shortened),
                  rect:CGRect(x:63,y:1170,width:900,height:44),
                  font:.systemFont(ofSize:25,weight:.medium),color:.lightGray)
+            let nickname=(UserDefaults.standard.string(forKey:"oranaplo.leaderboard.name") ?? "")
+                .trimmingCharacters(in:.whitespacesAndNewlines)
+            if (3...24).contains(nickname.count) {
+                text(nickname,rect:CGRect(x:63,y:1213,width:920,height:39),
+                     font:.systemFont(ofSize:26,weight:.medium),color:.white)
+            }
             text(language == .de ? "Erstellt mit ÓraNapló" : (language == .en ? "Made with ÓraNapló" : "Készítve az ÓraNaplóval"),
                  rect:CGRect(x:63,y:1260,width:900,height:36),
                  font:.systemFont(ofSize:23,weight:.semibold),color:blue)

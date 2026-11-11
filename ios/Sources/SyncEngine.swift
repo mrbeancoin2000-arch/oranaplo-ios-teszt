@@ -190,11 +190,8 @@ final class SyncEngine: ObservableObject {
         }
     }
     func authorizeAllHealth() async {
-        await SubscriptionManager.shared.refreshEntitlement()
-        guard SubscriptionManager.shared.proActive else {
-            status = "Pro-előfizetés szükséges a teljes HealthKit-engedélyhez."
-            return
-        }
+        // HealthKit READ access is available to free users for on-device dashboards.
+        // Pro is checked only in export code, so free mode still uploads heart rate alone.
         guard basicHealthFlowCompleted else {
             status = "Előbb futtasd a pulzus HealthKit-alaptesztet"
             return

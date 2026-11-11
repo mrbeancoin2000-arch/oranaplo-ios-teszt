@@ -82,6 +82,7 @@ try {
  } | ForEach-Object { Add-Approved $_.Name }
  Add-ByExtension '.github\workflows' @('.yml','.yaml') $false
  Add-ByExtension 'ios\Sources' @('.swift','.m','.h') $true
+ Add-Approved 'ios\Resources\leaderboard_config.json'
  Add-Approved 'ios\Resources\Info.plist'
  Add-Approved 'ios\Resources\OraNaplo.entitlements'
  Add-ByExtension 'ios\Resources' @('.strings','.stringsdict','.xcstrings') $true
@@ -90,6 +91,7 @@ try {
  Add-ByExtension 'watchOS' @('.swift','.plist','.entitlements') $true
  Add-ByExtension 'tests' @('.py','.html','.swift','.js','.xml','.json','.storekit') $true
  Add-ByExtension 'scripts' @('.gs','.js','.json') $true
+ Add-ByExtension 'supabase' @('.sql','.md') $true
  Add-ByExtension 'website' @('.html','.css','.js','.svg','.txt') $true
  Add-ByExtension 'docs' @('.md') $true
  if ($approved.Count -lt 10) { throw "Tulsagosan keves jovahagyott forrasfajl: $($approved.Count)" }

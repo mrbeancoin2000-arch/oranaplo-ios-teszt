@@ -146,6 +146,27 @@ struct SheetsAPI {
         return (try? await request("GET", "/\(id)?fields=spreadsheetId")) != nil
     }
 
+    /// Counts actual first-column entries rather than allocated grid rows.
+    /// Explicit refresh only: large Health archives may cost API quota and time.
+    func countFilledRecords(sheetID: String) async throws -> Int {
+        guard !sheetID.isEmpty else { throw SyncError.config("Missing spreadsheet ID") }
+        var components=URLComponents()
+        let ignored:Set<String>=["Dashboard","ElemzesBeallitasok"]
+        let sheets=Catalog.sheets.filter { !ignored.contains($0) }
+        components.queryItems=sheets.map { URLQueryItem(name:"ranges",value:"'\($0)'!A2:A") }
+        guard let query=components.percentEncodedQuery else { return 0 }
+        let data=try await request("GET","/\(sheetID)/values:batchGet?\(query)")
+        guard let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let ranges=json["valueRanges"] as? [[String:Any]] else { throw SyncError.config("Missing Google Sheets ranges") }
+        return ranges.reduce(0) { sum,range in
+            let rows=range["values"] as? [[Any]] ?? []
+            return sum + rows.filter { row in
+                guard let first=row.first else { return false }
+                return !String(describing:first).trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
+            }.count
+        }
+    }
+
     func createSpreadsheet() async throws -> String {
         let sheets: [[String: Any]] = Catalog.sheets.map { ["properties": ["title": $0, "gridProperties": ["frozenRowCount": 1]]] }
         let data = try await request("POST", "", body: ["properties": ["title": "ÓraNapló – Egészségadatok"], "sheets": sheets])
