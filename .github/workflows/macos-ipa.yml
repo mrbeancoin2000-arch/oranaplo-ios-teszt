@@ -14,7 +14,7 @@ on:
 jobs:
   build:
     runs-on: ${{ inputs.runner || 'macos-15-intel' }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Runner details
@@ -28,6 +28,34 @@ jobs:
           # Google iOS client settings already generated on Windows before upload.
           # Do not run configure.py here: absent google_oauth.json would reset to demo ID.
           xcodegen generate --spec project.yml
+      - name: Reconstruct test-only public OAuth metadata
+        shell: bash
+        run: |
+          python3 - <<'PYCODE'
+          import json, plistlib, re
+          from pathlib import Path
+          info=plistlib.loads(Path('ios/Resources/Info.plist').read_bytes())
+          src=Path('ios/Sources/AppConfig.swift').read_text(encoding='utf-8')
+          match=re.search(r'static let googleBundleID = "([^"]+)"',src)
+          if not match: raise SystemExit('Missing generated public Bundle ID')
+          Path('google_oauth.json').write_text(json.dumps({
+            'ios_client_id':info['GIDClientID'],
+            'ios_bundle_id':match.group(1)},indent=2),encoding='utf-8')
+          print('Public OAuth metadata prepared for CI tests, no credentials')
+          PYCODE
+      - name: Prepayment offline tests and Swift runtime
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/prepayment_audit.py 2>&1 | tee prepayment-run.log
+      - name: Unsigned iOS simulator build with real Apple SDK
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build-simulator CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee xcodebuild-simulator.log
       - name: Check Google and HealthKit metadata after XcodeGen
         shell: bash
         run: |
@@ -80,6 +108,11 @@ jobs:
           name: build-logs
           path: |
             xcodebuild.log
+            xcodebuild-simulator.log
+            prepayment-run.log
+            logs/prepayment_*/RESULT.json
+            logs/prepayment_*/JELENTES.html
+            logs/prepayment_*/*.log
             project.yml
             build-inputs.txt
             plist-normalize.txt

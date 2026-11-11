@@ -7,6 +7,8 @@ import CoreLocation
 final class HealthReader {
     static let shared = HealthReader()
     let store = HKHealthStore()
+    private var observers: [HKObserverQuery] = []
+    private var observedTypeIDs: Set<String> = []
 
     func authorize(onlyHeartRate: Bool = false) async throws {
         CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: előkészítés" : "HealthKit teljes engedélykérés: előkészítés")
@@ -27,6 +29,8 @@ final class HealthReader {
             types.insert(HKObjectType.workoutType())
             types.insert(HKSeriesType.workoutRoute())
             types.insert(HKObjectType.electrocardiogramType())
+            types.insert(HKObjectType.characteristicType(forIdentifier: .dateOfBirth))
+            types.insert(HKObjectType.characteristicType(forIdentifier: .biologicalSex))
         }
         // Runtime preflight: the Xcode source plist alone is not proof that the
         // IPA or Sideloadly-re-signed app still contains these privacy strings.
@@ -48,6 +52,38 @@ final class HealthReader {
             }
         }
         CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: engedélykérés visszatért" : "HealthKit teljes: engedélykérés visszatért")
+    }
+
+    /// Optional, separate consent for the local health profile and informational insights.
+    /// No DOB/sex/weight/height is uploaded automatically to Google Sheets.
+    func authorizeProfile() async throws {
+        guard HKHealthStore.isHealthDataAvailable() else {
+            throw SyncError.config("Az Apple Egészség nem érhető el ezen a készüléken")
+        }
+        var types: Set<HKObjectType> = [
+            HKObjectType.characteristicType(forIdentifier: .dateOfBirth),
+            HKObjectType.characteristicType(forIdentifier: .biologicalSex)
+        ]
+        let ids: [HKQuantityTypeIdentifier] = [
+            .height, .bodyMass, .stepCount, .dietaryWater,
+            .bloodPressureSystolic, .bloodPressureDiastolic
+        ]
+        for id in ids {
+            if let type = HKObjectType.quantityType(forIdentifier: id) { types.insert(type) }
+        }
+        for key in ["NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"] {
+            guard let reason = Bundle.main.object(forInfoDictionaryKey: key) as? String,
+                  !reason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw SyncError.config("Hiányzik a HealthKit adatvédelmi leírás: \(key)")
+            }
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            HealthAuthorizationBridge.requestAuthorization(store: store, readTypes: types) { success, error in
+                if let error { continuation.resume(throwing: error) }
+                else if success { continuation.resume(returning: ()) }
+                else { continuation.resume(throwing: SyncError.config("Egészségprofil engedélyezése sikertelen")) }
+            }
+        }
     }
 
     func samplePage(_ type: HKSampleType, since: Date, anchor: HKQueryAnchor?, limit: Int = 300) async throws -> ([HKSample], [HKDeletedObject], HKQueryAnchor?, Int) {
@@ -127,8 +163,34 @@ final class HealthReader {
             store.execute(q)
         }
     }
+    /// Register on launch and following authorization. HealthKit controls when callbacks occur;
+    /// this is never a promise of minute-by-minute updates.
+    func installObserverQueries() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let full = UserDefaults.standard.bool(forKey: "healthFullCompleted")
+        let metricIDs: [HKQuantityTypeIdentifier] = full ? [.heartRate, .stepCount, .heartRateVariabilitySDNN] : [.heartRate]
+        for identifier in metricIDs {
+            guard observedTypeIDs.insert(identifier.rawValue).inserted else { continue }
+            guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { continue }
+            let observer = HKObserverQuery(sampleType: type, predicate: nil) { _, finished, error in
+                guard error == nil else { finished(); return }
+                Task { @MainActor in
+                    // The sync engine persists rows before acknowledging the observer event.
+                    // An unsuccessful upload stays in the local durable queue for catch-up.
+                    await SyncEngine.shared.sync()
+                    finished()
+                }
+            }
+            observers.append(observer)
+            store.execute(observer)
+        }
+    }
+
     func enableBackgroundNotifications() async {
-        for id in [HKQuantityTypeIdentifier.heartRate, .stepCount, .heartRateVariabilitySDNN] {
+        installObserverQueries()
+        let types: [HKQuantityTypeIdentifier] = UserDefaults.standard.bool(forKey: "healthFullCompleted") ?
+            [.heartRate, .stepCount, .heartRateVariabilitySDNN] : [.heartRate]
+        for id in types {
             guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
             _ = try? await store.enableBackgroundDelivery(for: type, frequency: .hourly)
         }

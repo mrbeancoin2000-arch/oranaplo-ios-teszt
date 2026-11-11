@@ -7,9 +7,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 class PremiumInterfaceTests(unittest.TestCase):
     def test_focused_native_tabs(self):
         code = (ROOT / 'ios/Sources/OraNaploApp.swift').read_text(encoding='utf-8')
-        for label in ('tab.home', 'tab.metrics', 'tab.journal', 'tab.settings'):
+        for label in ('tab.home', 'tab.metrics', 'tab.run', 'tab.settings', 'journal.title'):
             self.assertIn(label, code)
         self.assertIn('TabView(selection:', code)
+        self.assertIn('showJournal = true', code)  # journal remains reachable without a sixth tab
         self.assertIn('MetalSurface', code)
 
     def test_sheet_open_is_a_real_action(self):

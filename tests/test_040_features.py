@@ -29,7 +29,8 @@ class BusinessAndReliabilityTests(unittest.TestCase):
         workout = (SRC / "WorkoutExport.swift").read_text(encoding="utf-8")
         for value in ("latestWorkout()", "HighHeartRateEvent", "LowHeartRateEvent", "IrregularHeartRhythmEvent", "stepCount", "split100m"):
             self.assertIn(value, overview)
-        self.assertIn('segmentStart = b.timestamp', workout)
+        self.assertIn('SplitMath.calculate', workout)
+        self.assertIn('segmentDistance = 0', (SRC / 'SplitMath.swift').read_text(encoding='utf-8'))
 
     def test_complete_translations_no_missing_keys(self):
         loc = (SRC / "L10n.swift").read_text(encoding="utf-8")

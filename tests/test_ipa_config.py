@@ -19,6 +19,9 @@ def fixture():
         'CFBundleURLTypes': [{'CFBundleURLSchemes': [REVERSED]}],
         'NSHealthShareUsageDescription': 'Teszt read permission',
         'NSHealthUpdateUsageDescription': 'Teszt update permission',
+        'NSLocationWhenInUseUsageDescription': 'Testing location permission',
+        'NSMotionUsageDescription': 'Testing pedometer permission',
+        'UIBackgroundModes': ['fetch', 'location'],
     }
 
 
@@ -34,6 +37,14 @@ class IPAInfoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = run_verifier(fixture(), tmp)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_verifier_rejects_missing_background_location(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            broken = fixture()
+            broken['UIBackgroundModes'] = ['fetch']
+            result = run_verifier(broken, tmp)
+            self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+            self.assertIn('background mode: location', result.stdout)
 
     def test_verifier_reports_missing_google_callback(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -43,51 +43,25 @@ struct WorkoutExport {
 /// 100 m splits derived from stored GPS route points, not fictional 100 m HealthKit samples.
 /// Distances and times are interpolated; HR is arithmetic mean/min/max of the available samples.
 func split100m(_ locations: [CLLocation], heart: [(Date,Double)], workout: HKWorkout, label: String) -> [ExportRow] {
-    let fixes = locations.filter { $0.horizontalAccuracy >= 0 && $0.horizontalAccuracy <= 50 }
-        .sorted { $0.timestamp < $1.timestamp }
-    guard fixes.count > 1 else { return [] }
-    var output: [ExportRow] = []
-    var distanceInSegment = 0.0
-    var segmentStart = fixes[0].timestamp
-    var index = 0
-    for i in 1..<fixes.count {
-        let a = fixes[i - 1], b = fixes[i]
-        let time = b.timestamp.timeIntervalSince(a.timestamp)
-        let segmentDistance = b.distance(from: a)
-        guard time > 0, time <= 120, segmentDistance > 0, segmentDistance <= 250 else {
-            distanceInSegment = 0
-            segmentStart = b.timestamp
-            continue
-        }
-        var traveled = 0.0
-        while distanceInSegment + (segmentDistance - traveled) >= 100 {
-            let remaining = 100 - distanceInSegment
-            let part = (traveled + remaining) / segmentDistance
-            let finish = a.timestamp.addingTimeInterval(time * part)
-            let elapsed = finish.timeIntervalSince(segmentStart)
-            if elapsed > 0.1 {
-                index += 1
-                let hrs = heart.filter { $0.0 >= segmentStart && $0.0 <= finish }.map(\.1)
-                let hrAvg = hrs.isEmpty ? "" : String(hrs.reduce(0,+) / Double(hrs.count))
-                let hrMin = hrs.min().map { String(describing: $0) } ?? ""
-                let hrMax = hrs.max().map { String(describing: $0) } ?? ""
-                let speed = 360.0 / elapsed // 0.1 km / (s / 3600)
-                let pace = elapsed / 6.0     // seconds per 100m -> min/km
-                let segmentID = "segment:\(workout.uuid.uuidString):\(index)"
-                let accuracy = max(a.horizontalAccuracy, b.horizontalAccuracy)
-                output.append(ExportRow(id: segmentID, sheet: "100m", values: [
-                    segmentID, workout.uuid.uuidString, label, String(index * 100), ISO.string(segmentStart),
-                    ISO.string(finish), String(elapsed), String(speed), String(pace), hrAvg, hrMin, hrMax,
-                    String(accuracy), ISO.string(Date())
-                ]))
-            }
-            traveled += remaining
-            distanceInSegment = 0
-            segmentStart = finish
-            // Prevent infinite loop from floating point roundoff
-            if segmentDistance - traveled < 0.0001 { break }
-        }
-        distanceInSegment += max(0, segmentDistance - traveled)
+    let fixes = locations.map {
+        TrackFix(time: $0.timestamp, latitude: $0.coordinate.latitude,
+                 longitude: $0.coordinate.longitude, accuracyMeters: $0.horizontalAccuracy)
     }
-    return output
+    let pulse = heart.map { HeartFix(time: $0.0, beatsPerMinute: $0.1) }
+    let maximumSpeed = workout.workoutActivityType == .walking ? 5.0 : 15.0
+    let sections = SplitMath.calculate(fixes, hearts: pulse,
+        workoutStart: workout.startDate, workoutEnd: workout.endDate,
+        maxSpeedMetersPerSecond: maximumSpeed)
+    return sections.map { segment in
+        let sectionID = "segment:\(workout.uuid.uuidString):\(segment.index)"
+        return ExportRow(id: sectionID, sheet: "100m", values: [
+            sectionID, workout.uuid.uuidString, label, String(segment.index * 100),
+            ISO.string(segment.start), ISO.string(segment.finish),
+            String(segment.elapsedSeconds), String(segment.speedKmh), String(segment.paceMinutesPerKm),
+            segment.heartMean.map { String($0) } ?? "",
+            segment.heartMinimum.map { String($0) } ?? "",
+            segment.heartMaximum.map { String($0) } ?? "",
+            String(segment.maxGPSAccuracy), ISO.string(Date())
+        ])
+    }
 }

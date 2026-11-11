@@ -1,0 +1,4 @@
+"NSLocationWhenInUseUsageDescription" = "ÓraNapló verwendet deinen Standort nur während eines von dir gestarteten Laufs für Strecke, Tempo und 100-Meter-Abschnitte.";
+"NSMotionUsageDescription" = "ÓraNapló verwendet iPhone-Bewegungsdaten, um Schritte während des Laufs zu zählen.";
+"NSHealthShareUsageDescription" = "ÓraNapló liest nur freigegebene Apple-Health-Daten für dein persönliches Protokoll und selbst gewählte Exporte.";
+"NSHealthUpdateUsageDescription" = "Diese App-Version schreibt keine Daten in Apple Health.";

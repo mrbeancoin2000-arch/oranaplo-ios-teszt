@@ -38,9 +38,13 @@ except (OSError, zipfile.BadZipFile, ValueError, plistlib.InvalidFileException) 
 bundle_id = str(info.get("CFBundleIdentifier", ""))
 print("IPA Bundle ID:", bundle_id or "HIÁNYZIK")
 check(bool(bundle_id and "$" not in bundle_id), "CFBundleIdentifier beállítva és feloldva")
-for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"):
+for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",
+            "NSLocationWhenInUseUsageDescription", "NSMotionUsageDescription"):
     val = info.get(key)
     check(isinstance(val, str) and bool(val.strip()), f"{key} létezik és nem üres")
+
+for mode in ("fetch", "location"):
+    check(mode in info.get("UIBackgroundModes", []), f"iOS background mode: {mode}")
 
 client = str(info.get("GIDClientID", "")).strip()
 print("GIDClientID:", client or "HIÁNYZIK")

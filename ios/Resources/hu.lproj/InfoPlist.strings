@@ -1,0 +1,4 @@
+"NSLocationWhenInUseUsageDescription" = "Az ÓraNapló a kifejezetten elindított futás során méri a GPS-útvonalat, a sebességet és a 100 méteres szakaszokat.";
+"NSMotionUsageDescription" = "A futás lépéseit az iPhone mozgásérzékelőjével mérjük.";
+"NSHealthShareUsageDescription" = "Az ÓraNapló csak a jóváhagyott Apple Egészség-adatokat olvassa a személyes naplóhoz és az általad indított exporthoz.";
+"NSHealthUpdateUsageDescription" = "Az alkalmazás ebben a verzióban nem ír Apple Egészség-adatokat.";

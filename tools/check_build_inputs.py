@@ -27,9 +27,13 @@ def validate(root=ROOT):
         return [f"Entitlements olvasási hiba: {exc}"]
     spec = (root / "project.yml").read_text(encoding="utf-8")
     swift = (root / "ios/Sources/AppConfig.swift").read_text(encoding="utf-8")
-    for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription"):
+    for key in ("NSHealthShareUsageDescription", "NSHealthUpdateUsageDescription",
+                "NSLocationWhenInUseUsageDescription", "NSMotionUsageDescription"):
         if not str(info.get(key, "")).strip():
             problems.append(f"Hiányzó HealthKit szöveg: {key}")
+    for mode in ('fetch', 'location'):
+        if mode not in info.get('UIBackgroundModes', []):
+            problems.append(f'Missing running background mode: {mode}')
     if ent.get("com.apple.developer.healthkit") is not True:
         problems.append("A HealthKit entitlement hiányzik a FORRÁS fájlból.")
     client = str(info.get("GIDClientID", ""))

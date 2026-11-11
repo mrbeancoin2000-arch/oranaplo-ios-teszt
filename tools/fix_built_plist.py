@@ -29,6 +29,9 @@ def main() -> int:
         "CFBundleURLTypes",
         "NSHealthShareUsageDescription",
         "NSHealthUpdateUsageDescription",
+        "NSLocationWhenInUseUsageDescription",
+        "NSMotionUsageDescription",
+        "UIBackgroundModes",
     )
     for key in keys:
         value = source.get(key)

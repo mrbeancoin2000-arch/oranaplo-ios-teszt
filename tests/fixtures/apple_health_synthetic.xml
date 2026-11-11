@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE HealthData [<!ELEMENT HealthData ANY><!ELEMENT Record ANY>]>
+<HealthData locale="en_US">
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Synthetic Watch" unit="count/min" value="70" startDate="2026-01-01 10:00:00 +0100" endDate="2026-01-01 10:00:00 +0100" creationDate="2026-01-01 10:00:01 +0100"/>
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Synthetic Watch" unit="count/min" value="81" startDate="2026-01-01 10:05:00 +0100" endDate="2026-01-01 10:05:00 +0100"/>
+ <Record type="HKQuantityTypeIdentifierHeartRateVariabilitySDNN" sourceName="Synthetic Watch" unit="ms" value="55" startDate="2026-01-01 10:03:00 +0100" endDate="2026-01-01 10:03:00 +0100"/>
+ <Record type="HKQuantityTypeIdentifierDietaryWater" sourceName="Synthetic iPhone" unit="L" value="0.75" startDate="2026-01-01 10:06:00 +0100" endDate="2026-01-01 10:06:00 +0100"/>
+ <Record type="HKCategoryTypeIdentifierSleepAnalysis" sourceName="Synthetic Watch" value="HKCategoryValueSleepAnalysisAsleepREM" startDate="2026-01-01 00:00:00 +0100" endDate="2026-01-01 00:30:00 +0100"/>
+ <Record type="HKQuantityTypeIdentifierHeartRate" sourceName="Synthetic Watch" unit="count/min" value="90" startDate="invalid" endDate="2026-01-01 11:00:00 +0100"/>
+ <Record type="HKQuantityTypeIdentifierSomethingElse" sourceName="Synthetic Watch" unit="count" value="42" startDate="2026-01-01 10:00:00 +0100" endDate="2026-01-01 10:00:00 +0100"/>
+</HealthData>

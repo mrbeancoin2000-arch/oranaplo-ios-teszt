@@ -1,0 +1,16 @@
+{
+  "app_store_account_active": false,
+  "paid_apps_agreement_active": false,
+  "banking_details_accepted_by_apple": false,
+  "apple_requested_forms_completed": false,
+  "healthkit_distribution_signed_and_tested": false,
+  "subscription_product_approved_and_sandbox_tested": false,
+  "small_business_program_reviewed": false,
+  "app_privacy_answers_verified": false,
+  "dsa_status_completed": false,
+  "google_oauth_production_verified": false,
+  "full_healthkit_e2e_and_sync_tested": false,
+  "contact_details_website_live": false,
+  "localization_all_languages_reviewed": false,
+  "app_store_submission_approved": false
+}

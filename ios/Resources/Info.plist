@@ -19,7 +19,7 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.4.0</string>
+	<string>0.5.2</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -30,18 +30,23 @@
 		</dict>
 	</array>
 	<key>CFBundleVersion</key>
-	<string>7</string>
+	<string>13</string>
 	<key>GIDClientID</key>
 	<string>808245427903-se7qqfsmrv43hp7bfqvtpq0124s21occ.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Az engedelyezett egeszsegadatokat a sajat Google Sheets-fajlodba mentjuk; a szolgaltato szervereire nem kuldjuk.</string>
+	<string>Az ÓraNapló a jóváhagyott egészségadatokat és a profilod megadott adatait helyben jeleníti meg; csak a választott mentéseket és a külön jóváhagyott profilt küldi a saját Google Sheets-fájlodba.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Az alkalmazas nem ir Apple Egeszseg-adatokat; csak olvasi engedelyt ker.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Az ÓraNapló kizárólag az általad elindított futás közben követi a GPS-útvonaladat, a sebességet és a 100 m-es szakaszokat. A nyers útvonalad alapból csak a készüléken marad.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>A futás közbeni lépések számát a készülék mozgásérzékelőjéből olvassuk. A szünetek alatt gyűlt lépéseket nem számoljuk a futáshoz.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<string>location</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>

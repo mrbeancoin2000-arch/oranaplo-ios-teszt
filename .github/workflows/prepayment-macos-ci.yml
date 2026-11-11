@@ -1,0 +1,44 @@
+name: Prepayment audit + unsigned iOS simulator build
+on:
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: macos-15-intel
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report Xcode environment
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          swiftc --version
+      - name: Prepayment test suite (real Swift core runtime)
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/prepayment_audit.py 2>&1 | tee prepayment-run.log
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.yml
+      - name: Unsigned iOS simulator build (real Apple SDK)
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build 2>&1 | tee xcodebuild-simulator.log
+      - name: Upload test and build logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OraNaplo-051-prepayment-evidence
+          path: |
+            prepayment-run.log
+            xcodebuild-simulator.log
+            logs/prepayment_*/RESULT.json
+            logs/prepayment_*/JELENTES.html
+            logs/prepayment_*/*.log
+          if-no-files-found: ignore
+          retention-days: 14

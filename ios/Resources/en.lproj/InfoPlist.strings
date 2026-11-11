@@ -1,0 +1,4 @@
+"NSLocationWhenInUseUsageDescription" = "ÓraNapló uses your location only during a run you start to record your GPS route, speed, and 100-metre splits.";
+"NSMotionUsageDescription" = "ÓraNapló uses iPhone motion data to count steps during your run.";
+"NSHealthShareUsageDescription" = "ÓraNapló reads only authorized Apple Health data for your personal log and exports you choose.";
+"NSHealthUpdateUsageDescription" = "This app version does not write to Apple Health.";

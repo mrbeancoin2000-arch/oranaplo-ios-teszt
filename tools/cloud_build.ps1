@@ -76,7 +76,7 @@ try {
   }
  }
  # Explicit upload allowlist: do not push arbitrary files from customers' PCs.
- @('.gitignore','project.yml','google_oauth.example.json') | ForEach-Object { Add-Approved $_ }
+ @('.gitignore','project.yml','google_oauth.example.json','release_manifest.json') | ForEach-Object { Add-Approved $_ }
  Get-ChildItem -LiteralPath $projectRoot -File -Force | Where-Object {
   @('.bat','.md') -contains $_.Extension.ToLowerInvariant()
  } | ForEach-Object { Add-Approved $_.Name }
@@ -84,9 +84,12 @@ try {
  Add-ByExtension 'ios\Sources' @('.swift','.m','.h') $true
  Add-Approved 'ios\Resources\Info.plist'
  Add-Approved 'ios\Resources\OraNaplo.entitlements'
+ Add-ByExtension 'ios\Resources' @('.strings','.stringsdict','.xcstrings') $true
  Add-ByExtension 'ios\Resources\Assets.xcassets' @('.json','.png','.jpg','.jpeg') $true
  Add-ByExtension 'tools' @('.ps1','.py') $false
- Add-ByExtension 'tests' @('.py','.html') $false
+ Add-ByExtension 'tests' @('.py','.html','.swift','.js','.xml','.json','.storekit') $true
+ Add-ByExtension 'scripts' @('.gs','.js','.json') $true
+ Add-ByExtension 'website' @('.html','.css','.js','.svg','.txt') $true
  Add-ByExtension 'docs' @('.md') $true
  if ($approved.Count -lt 10) { throw "Tulsagosan keves jovahagyott forrasfajl: $($approved.Count)" }
  foreach ($rel in ($approved | Select-Object -Unique)) {
@@ -114,17 +117,38 @@ try {
  } else {
   Write-Output 'A GitHub mar a legfrissebb forrast tartalmazza. Nem szukseges uj commit.'
  }
+ $expectedSHA = [string](& git -C $stage rev-parse HEAD)
+ if ($LASTEXITCODE -ne 0 -or -not $expectedSHA.Trim()) { throw 'Nem olvashato a feltoltott commit SHA-ja' }
+ $expectedSHA = $expectedSHA.Trim()
+ Write-Output "GitHub commit ellenorzese: $expectedSHA"
 } finally {
  if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
 }
-Write-Output 'macOS-es workflow inditasa ...'
+# Remember the last run BEFORE dispatch; otherwise the script could download a
+# previous successful IPA while the newly queued job is still invisible.
+$beforeJSON = & gh run list --repo $fullRepo --workflow macos-ipa.yml --limit 1 --json databaseId
+if ($LASTEXITCODE -ne 0) { throw 'A korabbi GitHub futasok nem olvashatok.' }
+$beforeRuns = @($beforeJSON | ConvertFrom-Json)
+$previousID = if ($beforeRuns.Count -gt 0) { [string]$beforeRuns[0].databaseId } else { '' }
+Write-Output 'macOS-es workflow inditasa (Swift, szimulator, iPhoneOS, IPA)...'
 & gh workflow run macos-ipa.yml --repo $fullRepo --ref main -f runner=macos-15-intel
 if ($LASTEXITCODE -ne 0) { throw 'Workflow inditas hiba. Ellenorizd Actions engedelyeket a GitHub-on.' }
-Start-Sleep -Seconds 8
-$runs = & gh run list --repo $fullRepo --workflow macos-ipa.yml --limit 1 --json databaseId --jq '.[0].databaseId'
-if ($LASTEXITCODE -ne 0 -or -not $runs) { throw 'A build elindult, de a futasazonosito nem erheto el. Nezd meg a GitHub Actions oldalt.' }
-$run = $runs.Trim()
-Write-Output "GitHub Actions run: $run"
+$run = $null
+for ($attempt = 1; $attempt -le 30 -and -not $run; $attempt++) {
+ Start-Sleep -Seconds 3
+ $json = & gh run list --repo $fullRepo --workflow macos-ipa.yml --limit 20 --json databaseId,headSha,event
+ if ($LASTEXITCODE -ne 0) { continue }
+ $items = @($json | ConvertFrom-Json)
+ foreach ($item in $items) {
+  if ($item.event -eq 'workflow_dispatch' -and $item.headSha -eq $expectedSHA -and
+      [string]$item.databaseId -ne $previousID) {
+   $run = [string]$item.databaseId
+   break
+  }
+ }
+}
+if (-not $run) { throw "Az uj workflow azonositoja nem erheto el; ellenorizd a GitHub Actions oldalt. Commit: $expectedSHA" }
+Write-Output "Uj GitHub Actions run: $run (commit: $expectedSHA)"
 & gh run watch $run --repo $fullRepo --exit-status
 $watchExit=$LASTEXITCODE
 New-Item -ItemType Directory -Force -Path output | Out-Null

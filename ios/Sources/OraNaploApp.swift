@@ -3,11 +3,12 @@ import UIKit
 import BackgroundTasks
 import GoogleSignIn
 import UserNotifications
+import UniformTypeIdentifiers
 
 @main
 struct OraNaploApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var engine = SyncEngine()
+    @StateObject private var engine = SyncEngine.shared
     var body: some Scene {
         WindowGroup {
             ContentView().environmentObject(engine)
@@ -29,13 +30,22 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             task.expirationHandler = { task.setTaskCompleted(success: false) }
             Task { @MainActor in
                 // Apple's scheduling is opportunistic; never promise interval accuracy.
-                let engine = SyncEngine()
+                let engine = SyncEngine.shared
                 await engine.account.restore()
                 await engine.sync()
                 task.setTaskCompleted(success: true)
                 Self.schedule()
             }
         }
+        // Reinstall observers early at launch so iOS can deliver pending HealthKit updates.
+        // No HealthKit observer runs before the user has completed the permission flow.
+        // Unsigned development builds can lose HealthKit entitlements when sideloaded.
+        // Do not schedule observers on startup for those test builds.
+        #if !DEBUG
+        if UserDefaults.standard.bool(forKey: "healthBasicCompleted") {
+            HealthReader.shared.installObserverQueries()
+        }
+        #endif
         Self.schedule()
         return true
     }
@@ -167,6 +177,12 @@ struct ContentView: View {
     @State private var journalKind = "journal.mood"
     @State private var journalText = ""
     @State private var showTechnicalDetails = false
+    @State private var showProfileUploadPrompt = false
+    @State private var showLegalInformation = false
+    @State private var showJournal = false
+    @State private var showXMLPicker = false
+    @AppStorage("oranaplo.water.allRecorded") private var waterAllRecorded = false
+    @AppStorage("oranaplo.water.goalML") private var waterGoalML = 0.0
 
     private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .hu }
     private func t(_ key: String) -> String { L10n.t(key, language) }
@@ -174,9 +190,10 @@ struct ContentView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             home.tabItem { Label(t("tab.home"), systemImage: "square.grid.2x2") }.tag(0)
+            RunTrackerView().tabItem { Label(t("tab.run"), systemImage: "figure.run") }.tag(5)
             measurements.tabItem { Label(t("tab.metrics"), systemImage: "waveform.path.ecg") }.tag(1)
-            journal.tabItem { Label(t("tab.journal"), systemImage: "square.and.pencil") }.tag(2)
-            settings.tabItem { Label(t("tab.settings"), systemImage: "slider.horizontal.3") }.tag(3)
+            healthProfilePage.tabItem { Label(t("tab.profile"), systemImage: "person.crop.rectangle") }.tag(3)
+            settings.tabItem { Label(t("tab.settings"), systemImage: "slider.horizontal.3") }.tag(4)
         }
         .tint(Atelier.azure)
         .toolbarBackground(Atelier.graphite, for: .tabBar)
@@ -185,6 +202,17 @@ struct ContentView: View {
         .environment(\.locale, Locale(identifier: languageCode))
         .onChange(of: scenePhase) { _, next in
             if next == .active { Task { await subscriptions.refreshEntitlement() } }
+        }
+        .sheet(isPresented: $showLegalInformation) { legalInformationSheet }
+        .sheet(isPresented: $showJournal) { journal }
+        .fileImporter(isPresented: $showXMLPicker, allowedContentTypes: [.xml], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let file = urls.first { Task { await engine.importAppleHealthXML(from: file) } }
+            case .failure:
+                // A cancelled or failed picker must never create a health export.
+                break
+            }
         }
     }
 
@@ -229,6 +257,11 @@ struct ContentView: View {
             }
             sheetCard
             workoutCard
+            MetalSurface {
+                Button { showJournal = true } label: {
+                    ActionLabel(title:t("journal.title"), symbol:"square.and.pencil", primary:false)
+                }.buttonStyle(PressFeedback())
+            }
             observationsCard
             syncCard
             planCard
@@ -405,6 +438,10 @@ struct ContentView: View {
                     Text(subscriptions.product.map { $0.displayPrice + " / " + t("metrics.365") } ?? t("tier.pro.price"))
                         .font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
                     Text(t("tier.price.note")).font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(t("legal.subscription.summary"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.ice)
+                        .fixedSize(horizontal: false, vertical: true)
                     if subscriptions.product != nil {
                         Button { Task { await subscriptions.purchase() } } label: {
                             ActionLabel(title: t("tier.buy"), symbol: "crown")
@@ -416,6 +453,9 @@ struct ContentView: View {
                     Label(t("tier.verified"), systemImage: "checkmark.shield.fill")
                         .font(.system(size: 12)).foregroundStyle(Atelier.mint)
                 }
+                Button { showLegalInformation = true } label: {
+                    ActionLabel(title: t("legal.title"), symbol: "doc.text.magnifyingglass", primary: false)
+                }.buttonStyle(PressFeedback())
                 Text(t(subscriptions.messageKey))
                     .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                 Button { Task { await subscriptions.restore() } } label: {
@@ -501,6 +541,15 @@ struct ContentView: View {
                         .disabled(engine.busy || !engine.account.loggedIn || !subscriptions.proActive)
                     Text(t(subscriptions.proActive ? "metrics.import.note" : "metrics.pro.lock"))
                         .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    Divider().overlay(Atelier.line)
+                    SectionTitle(title: t("xml.title"), symbol: "doc.text")
+                    Text(t("xml.description"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    Button { showXMLPicker = true } label: {
+                        ActionLabel(title: t("xml.pick"), symbol: "doc.badge.plus", primary: false)
+                    }.buttonStyle(PressFeedback()).disabled(engine.busy || !engine.account.loggedIn)
+                    Text(t(engine.xmlImportStatusKey) + (engine.xmlImportCounts.isEmpty ? "" : " · " + engine.xmlImportCounts))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
                 }
             }
         }
@@ -548,6 +597,122 @@ struct ContentView: View {
                     ActionLabel(title: t("sheet.open"), symbol: "tablecells", primary: false)
                 }.buttonStyle(PressFeedback())
             }
+        }
+    }
+
+    // MARK: - Health profile and cautious, explainable observations
+    private var healthProfilePage: some View {
+        AppCanvas {
+            heading(t("profile.eyebrow"), t("profile.title"), t("profile.desc"))
+            MetalSurface(prominent: true) {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(title: t("profile.healthdata"), symbol: "person.text.rectangle")
+                    if let profile = engine.profile {
+                        HStack(spacing: 8) {
+                            statistic(t("profile.age"), profile.ageYears.map { "\($0) " + t("profile.years") } ?? t("profile.missing"))
+                            statistic(t("profile.sex"), t(profile.biologicalSexKey))
+                        }
+                        HStack(spacing: 8) {
+                            statistic(t("profile.height"), profile.heightCM.map { String(format: "%.1f cm", $0) } ?? t("profile.missing"))
+                            statistic(t("profile.weight"), profile.weightKG.map { String(format: "%.1f kg", $0) } ?? t("profile.missing"))
+                        }
+                        if let bmi = profile.calculatedBMI {
+                            HStack(spacing: 8) {
+                                Text(t("profile.bmi")).font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                                Spacer()
+                                Text(String(format: "%.1f", bmi)).font(.system(size: 14, weight: .medium))
+                            }
+                            Text(t("profile.bmi.note")).font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                        }
+                        if let date = profile.weightDate {
+                            Text(t("profile.weight.date") + ": " + formattedDate(date))
+                                .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                        }
+                    } else {
+                        Text(t("profile.missing.desc"))
+                            .font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                    }
+                    Text(t("profile.editHealth"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    Button { Task { await engine.requestProfileAccess() } } label: {
+                        ActionLabel(title: t("profile.authorize"), symbol: "heart.text.square")
+                    }.buttonStyle(PressFeedback())
+                    Button { Task { await engine.refreshProfileAndObservations() } } label: {
+                        ActionLabel(title: t("profile.refresh"), symbol: "arrow.clockwise", primary: false)
+                    }.disabled(!engine.profileAuthorized).buttonStyle(PressFeedback())
+                    Text(t(engine.profileMessageKey)).font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                }
+            }
+            MetalSurface {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(title: t("profile.insights"), symbol: "heart.text.clipboard")
+                    if engine.personalObservations.isEmpty {
+                        Text(t("profile.insights.empty"))
+                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    } else {
+                        ForEach(engine.personalObservations) { item in
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack(spacing: 9) {
+                                    Image(systemName: item.level == .urgent ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                                        .foregroundStyle(item.level == .urgent ? Color.orange : Atelier.azure)
+                                    Text(t(item.titleKey)).font(.system(size: 14, weight: .semibold))
+                                }
+                                Text(item.measurement).font(.system(size: 16, weight: .medium, design: .rounded))
+                                Text(t(item.messageKey)).font(.system(size: 12)).foregroundStyle(Atelier.ice)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(t(item.sourceKey) + " · " + formattedDate(item.date))
+                                    .font(.system(size: 10)).foregroundStyle(Atelier.mist)
+                            }
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Atelier.midnight.opacity(0.47), in: RoundedRectangle(cornerRadius: 13))
+                        }
+                    }
+                    Text(t("profile.disclaimer"))
+                        .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            MetalSurface {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionTitle(title: t("profile.water.title"), symbol: "drop")
+                    Toggle(t("profile.water.all"), isOn: $waterAllRecorded).tint(Atelier.azure)
+                    Text(t("profile.water.explain"))
+                        .font(.system(size: 11)).foregroundStyle(Atelier.mist)
+                    Stepper(value: $waterGoalML, in: 0...5000, step: 250) {
+                        Text(t("profile.water.goal") + ": " + (waterGoalML == 0 ? t("profile.water.disabled") : String(format: "%.0f mL", waterGoalML)))
+                            .font(.system(size: 12))
+                    }.disabled(!waterAllRecorded)
+                    Button { Task { await engine.refreshProfileAndObservations() } } label: {
+                        ActionLabel(title: t("profile.insights.refresh"), symbol: "arrow.clockwise", primary: false)
+                    }.buttonStyle(PressFeedback()).disabled(!engine.profileAuthorized)
+                }
+            }
+            MetalSurface {
+                VStack(alignment: .leading, spacing: 13) {
+                    SectionTitle(title: t("profile.script.title"), symbol: "tablecells")
+                    Text(t("profile.script.desc"))
+                        .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button { showProfileUploadPrompt = true } label: {
+                        ActionLabel(title: t("profile.export"), symbol: "square.and.arrow.up", primary: false)
+                    }.buttonStyle(PressFeedback())
+                        .disabled(!subscriptions.proActive || !engine.account.loggedIn || engine.profile == nil)
+                    if !subscriptions.proActive { Text(t("profile.script.pro")).font(.system(size: 11)).foregroundStyle(Atelier.mist) }
+                    if let url = engine.sheetURL {
+                        Button { openURL(url) } label: {
+                            ActionLabel(title: t("sheet.open"), symbol: "arrow.up.right.square", primary: false)
+                        }.buttonStyle(PressFeedback())
+                    }
+                }
+            }
+        }
+        .confirmationDialog(t("profile.export.confirm.title"), isPresented: $showProfileUploadPrompt,
+                            titleVisibility: .visible) {
+            Button(t("profile.export.confirm.accept")) { Task { await engine.exportProfileToOwnSheet() } }
+            Button(t("common.close"), role: .cancel) { }
+        } message: {
+            Text(t("profile.export.confirm.message"))
         }
     }
 
@@ -609,7 +774,7 @@ struct ContentView: View {
                         ActionLabel(title: t("settings.showTechnical"), symbol: "chevron.down", primary: false)
                     }.buttonStyle(PressFeedback())
                     if showTechnicalDetails {
-                        Text(CrashCheckpoint.last)
+                        Text(CrashCheckpoint.recentHistory.isEmpty ? CrashCheckpoint.last : CrashCheckpoint.recentHistory)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(Atelier.mist)
                         Text(CrashCheckpoint.environmentSummary)
@@ -619,7 +784,7 @@ struct ContentView: View {
                     }
                     Button {
                         UIPasteboard.general.string = "ÓraNapló / " + t("settings.diagnostics") + "\n" +
-                            CrashCheckpoint.last + "\n" + CrashCheckpoint.environmentSummary +
+                            CrashCheckpoint.recentHistory + "\n" + CrashCheckpoint.environmentSummary +
                             "\n" + engine.status + "\n" + subscriptions.technicalError
                     } label: {
                         ActionLabel(title: t("settings.copy"), symbol: "doc.on.doc", primary: false)
@@ -632,8 +797,64 @@ struct ContentView: View {
                     Text(t("settings.limit"))
                     Text(t("settings.note"))
                     Text(t("settings.privacy"))
+                    Button { showLegalInformation = true } label: {
+                        ActionLabel(title: t("legal.title"), symbol: "lock.doc", primary: false)
+                    }.buttonStyle(PressFeedback())
                 }.font(.system(size: 12)).foregroundStyle(Atelier.mist)
             }
+        }
+    }
+
+    // Offline summary is always visible. The App Store requires published HTTPS
+    // URLs before release; external links appear only after configuration.
+    private var legalInformationSheet: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(t("legal.subscription.summary"))
+                        .font(.system(size: 14, weight: .medium))
+                    legalSection(t("legal.privacy.title"), t("legal.privacy.body"))
+                    legalSection(t("legal.terms.title"), t("legal.terms.body"))
+                    legalSection(t("legal.health.title"), t("legal.health.body"))
+                    legalSection(t("legal.support.title"), t("legal.support.body"))
+                    if let url = ReleaseLinks.page("privacy", language: language) {
+                        Link(t("legal.privacy.open"), destination: url)
+                            .foregroundStyle(Atelier.azure)
+                    }
+                    if let url = ReleaseLinks.page("terms", language: language) {
+                        Link(t("legal.terms.open"), destination: url)
+                            .foregroundStyle(Atelier.azure)
+                    }
+                    if let url = ReleaseLinks.page("support", language: language) {
+                        Link(t("legal.support.open"), destination: url)
+                            .foregroundStyle(Atelier.azure)
+                    }
+                    if ReleaseLinks.page("privacy", language: language) == nil {
+                        Text(t("legal.links.pending"))
+                            .font(.system(size: 12)).foregroundStyle(Atelier.mist)
+                    }
+                }
+                .padding(22)
+            }
+            .background(Atelier.midnight)
+            .foregroundStyle(.white)
+            .navigationTitle(t("legal.title"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(t("common.close")) { showLegalInformation = false }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func legalSection(_ title: String, _ content: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.system(size: 16, weight: .semibold))
+            Text(content)
+                .font(.system(size: 13)).foregroundStyle(Atelier.mist)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -1,0 +1,35 @@
+{
+  "identifier": "A0FA5E01",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {},
+  "subscriptionGroups": [
+    {
+      "id": "A0FA5E02",
+      "localizations": [],
+      "name": "ÓraNapló Pro",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "1000",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "A0FA5E03",
+          "introductoryOffer": null,
+          "localizations": [
+            {"description": "Teljes egészségadatexport és edzéselemzés egy évre.", "displayName": "ÓraNapló Pro – Éves", "locale": "hu_HU"},
+            {"description": "Full health export and workout insights for one year.", "displayName": "ÓraNapló Pro – Annual", "locale": "en_US"},
+            {"description": "Vollständiger Gesundheitsdatenexport für ein Jahr.", "displayName": "ÓraNapló Pro – Jährlich", "locale": "de_DE"}
+          ],
+          "productID": "hu.oranaplo.pro.yearly",
+          "recurringSubscriptionPeriod": "P1Y",
+          "referenceName": "OraNaplo Pro Annual (local test only)",
+          "subscriptionGroupID": "A0FA5E02",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {"major": 2, "minor": 0}
+}
