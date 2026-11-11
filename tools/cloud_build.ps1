@@ -124,33 +124,60 @@ try {
 } finally {
  if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
 }
-# Remember the last run BEFORE dispatch; otherwise the script could download a
-# previous successful IPA while the newly queued job is still invisible.
-$beforeJSON = & gh run list --repo $fullRepo --workflow macos-ipa.yml --limit 1 --json databaseId
-if ($LASTEXITCODE -ne 0) { throw 'A korabbi GitHub futasok nem olvashatok.' }
-$beforeRuns = @($beforeJSON | ConvertFrom-Json)
-$previousID = if ($beforeRuns.Count -gt 0) { [string]$beforeRuns[0].databaseId } else { '' }
-Write-Output 'macOS-es workflow inditasa (Swift, szimulator, iPhoneOS, IPA)...'
-& gh workflow run macos-ipa.yml --repo $fullRepo --ref main -f runner=macos-15-intel
+# Each dispatch carries a unique token in the GitHub run displayTitle.
+# Do not use @($json | ConvertFrom-Json) on Windows PowerShell 5.1:
+# it can wrap the complete array in ONE element, and [string] on the
+# databaseId property joins ALL old run IDs (the 2026-11-11 HTTP 404 bug).
+$requestID = [Guid]::NewGuid().ToString('N')
+$expectedTitle = "OraNaplo CI $requestID"
+Write-Output "macOS workflow inditasa. Egyedi request: $requestID"
+& gh workflow run macos-ipa.yml --repo $fullRepo --ref main -f runner=macos-15-intel -f "request_id=$requestID"
 if ($LASTEXITCODE -ne 0) { throw 'Workflow inditas hiba. Ellenorizd Actions engedelyeket a GitHub-on.' }
-$run = $null
-for ($attempt = 1; $attempt -le 30 -and -not $run; $attempt++) {
- Start-Sleep -Seconds 3
- $json = & gh run list --repo $fullRepo --workflow macos-ipa.yml --limit 20 --json databaseId,headSha,event
- if ($LASTEXITCODE -ne 0) { continue }
- $items = @($json | ConvertFrom-Json)
- foreach ($item in $items) {
-  if ($item.event -eq 'workflow_dispatch' -and $item.headSha -eq $expectedSHA -and
-      [string]$item.databaseId -ne $previousID) {
-   $run = [string]$item.databaseId
-   break
-  }
+$run = ''
+for ($attempt = 1; $attempt -le 36 -and -not $run; $attempt++) {
+ Start-Sleep -Seconds 5
+ $oldPreference = $ErrorActionPreference
+ try {
+  $ErrorActionPreference = 'Continue'
+  $rawLines = & gh run list --repo $fullRepo --workflow macos-ipa.yml --event workflow_dispatch --limit 75 --json databaseId,headSha,event,displayTitle 2>$null
+  $listExit = $LASTEXITCODE
+ } finally { $ErrorActionPreference = $oldPreference }
+ if ($listExit -ne 0 -or -not $rawLines) { continue }
+ # Python selects exactly one numeric ID by unique token + exact Git commit.
+ # It is tested independently with fake GitHub JSON (including old runs).
+ $oldPreference = $ErrorActionPreference
+ try {
+  $ErrorActionPreference = 'Continue'
+  $selected = @(($rawLines -join "`n") | & python tools/select_github_run.py --token $requestID --sha $expectedSHA 2>$null)
+  $selectionExit = $LASTEXITCODE
+ } finally { $ErrorActionPreference = $oldPreference }
+ if ($selectionExit -eq 3) { throw 'Tobb futas egyezik a request azonositojaval. Biztonsagi okbol leallitva.' }
+ if ($selectionExit -eq 4) { throw 'Ervenytelen GitHub futaslista vagy kimenet. Nem valasztunk rossz IPA-t.' }
+ if ($selectionExit -eq 0) {
+  if ($selected.Count -ne 1) { throw 'Hibas valasz a workflow futasvalaszto programtol.' }
+  $run = ([string]$selected[0]).Trim()
+  if ($run -notmatch '^[0-9]{5,20}$') { throw "Ervenytelen workflow run ID: $run" }
  }
 }
-if (-not $run) { throw "Az uj workflow azonositoja nem erheto el; ellenorizd a GitHub Actions oldalt. Commit: $expectedSHA" }
-Write-Output "Uj GitHub Actions run: $run (commit: $expectedSHA)"
-& gh run watch $run --repo $fullRepo --exit-status
-$watchExit=$LASTEXITCODE
+if (-not $run) { throw "Nem talalhato a SAJAT uj GitHub Actions futas. Request: $requestID Commit: $expectedSHA. Ne hasznalj regi IPA-t." }
+Write-Output "Uj GitHub Actions futasazonosito: $run (commit: $expectedSHA, request: $requestID)"
+Write-Output "Futas: https://github.com/$fullRepo/actions/runs/$run"
+$oldPreference = $ErrorActionPreference
+try {
+ $ErrorActionPreference = 'Continue'
+ & gh run watch $run --repo $fullRepo --exit-status
+ $watchExit = $LASTEXITCODE
+} finally { $ErrorActionPreference = $oldPreference }
+# Verify the ACTUAL resulting run; never treat a past success as the new result.
+$detailsJSON = & gh run view $run --repo $fullRepo --json databaseId,headSha,event,displayTitle,status,conclusion,url
+if ($LASTEXITCODE -ne 0 -or -not $detailsJSON) { throw "A pontos Github futas eredmenye nem olvashato: $run" }
+$details = ConvertFrom-Json -InputObject ($detailsJSON -join "`n")
+if ([string]$details.databaseId -ne $run -or [string]$details.displayTitle -ne $expectedTitle -or
+    [string]$details.headSha -ne $expectedSHA -or [string]$details.event -ne 'workflow_dispatch') {
+ throw "GitHub run azonositas elteres, letoltes megszakitva. ID: $run"
+}
+if ([string]$details.status -ne 'completed' -or [string]$details.conclusion -ne 'success') { $watchExit = 1 }
+Write-Output "GitHub workflow eredmeny: $($details.status) / $($details.conclusion)"
 New-Item -ItemType Directory -Force -Path output | Out-Null
 # Every workflow uses its own download directory to avoid stale-file conflicts.
 $diagnosticDirectory = Join-Path 'output' ("diagnostics-$run")
@@ -176,6 +203,12 @@ try {
   New-Item -ItemType Directory -Force -Path $buildLogDirectory | Out-Null
   & gh run download $run --repo $fullRepo --name build-logs --dir $buildLogDirectory 2>$null
   if ($LASTEXITCODE -eq 0) { Write-Output "Build naplo: $buildLogDirectory\xcodebuild.log" }
+  $failedStepsLog = Join-Path $buildLogDirectory 'github-failed-steps.log'
+  & gh run view $run --repo $fullRepo --log-failed 2>$null | Out-File -LiteralPath $failedStepsLog -Encoding utf8
+  if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $failedStepsLog)) {
+   Write-Output "Hibas GitHub-lepesek naploja: $failedStepsLog"
+   Get-Content -LiteralPath $failedStepsLog -Tail 50 | ForEach-Object { Write-Output $_ }
+  }
  }
 } finally { $ErrorActionPreference = $prevErrorActionPreference }
 

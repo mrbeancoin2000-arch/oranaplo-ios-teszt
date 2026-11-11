@@ -80,9 +80,11 @@ class OneButtonReleaseTests(unittest.TestCase):
     def test_cloud_does_not_reuse_previous_github_run(self):
         cloud=(ROOT/'tools/cloud_build.ps1').read_text(encoding='utf8')
         self.assertIn('rev-parse HEAD',cloud)
-        self.assertIn('headSha,event',cloud)
-        self.assertIn("$item.headSha -eq $expectedSHA",cloud)
-        self.assertIn("$item.event -eq 'workflow_dispatch'",cloud)
+        self.assertIn('headSha,event,displayTitle',cloud)
+        self.assertIn('tools/select_github_run.py --token $requestID --sha $expectedSHA',cloud)
+        self.assertIn("$details.headSha -ne $expectedSHA",cloud)
+        self.assertIn("$details.event -ne 'workflow_dispatch'",cloud)
+        self.assertNotIn('@($json | ConvertFrom-Json)',cloud.split('# Each dispatch carries')[0])
 
     def test_one_mac_run_compiles_simulator_and_iphoneos(self):
         ci=(ROOT/'.github/workflows/macos-ipa.yml').read_text(encoding='utf8')

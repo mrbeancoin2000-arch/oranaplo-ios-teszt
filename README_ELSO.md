@@ -1,3 +1,5 @@
+**ÚJ: GitHub Actions 404 / összefűzött run ID javítás: README_053_GITHUB_FUTAS_JAVITAS.md**
+
 # ÓraNapló 0.4.1 – Windows UTF-8 javítás
 
 Lásd: `VALTOZASOK_041.md`.
