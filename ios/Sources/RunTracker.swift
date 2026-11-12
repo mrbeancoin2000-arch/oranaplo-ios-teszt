@@ -493,7 +493,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         let routePoint = RunRoutePoint(date: point.timestamp,latitude:point.coordinate.latitude,
             longitude:point.coordinate.longitude,horizontalAccuracy:point.horizontalAccuracy,
             activeSeconds:elapsed,cumulativeMeters:current?.gpsMeters ?? 0,
-            breakBefore:awaitingFixAfterPause)
+            breakBefore:awaitingFixAfterPause,altitudeMeters:point.verticalAccuracy >= 0 ? point.altitude : nil)
         if let previous = lastFix {
             let delta = point.timestamp.timeIntervalSince(previous.timestamp)
             let meters = point.distance(from: previous)
@@ -503,7 +503,8 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
                 lastFix = point
                 current?.route.append(RunRoutePoint(date:point.timestamp,latitude:point.coordinate.latitude,
                     longitude:point.coordinate.longitude,horizontalAccuracy:point.horizontalAccuracy,
-                    activeSeconds:elapsed,cumulativeMeters:current?.gpsMeters ?? 0,breakBefore:true))
+                    activeSeconds:elapsed,cumulativeMeters:current?.gpsMeters ?? 0,breakBefore:true,
+                    altitudeMeters:point.verticalAccuracy >= 0 ? point.altitude : nil))
                 checkpoint(); return
             }
             // Ignore sub-3m jitter to reduce stationary GPS drift.

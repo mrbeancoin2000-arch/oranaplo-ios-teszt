@@ -174,36 +174,41 @@ final class HealthReader {
     }
     /// Register on launch and following authorization. HealthKit controls when callbacks occur;
     /// this is never a promise of minute-by-minute updates.
+    private var observedMetrics: [Metric] {
+        let full=UserDefaults.standard.bool(forKey:"healthFullCompleted")
+        guard full else { return Catalog.metrics.filter { $0.id == Catalog.freeSampleIdentifier } }
+        let monitored:Set<String> = ["HeartRate","RestingHeartRate","HeartRateVariabilitySDNN",
+                                      "SleepAnalysis","StepCount","RespiratoryRate",
+                                      "AppleSleepingWristTemperature","BodyMass","BodyFatPercentage","DietaryWater"]
+        return Catalog.metrics.filter { metric in monitored.contains(metric.id.replacingOccurrences(of:"HKQuantityTypeIdentifier",with:"")
+                                                     .replacingOccurrences(of:"HKCategoryTypeIdentifier",with:"")) }
+    }
     func installObserverQueries() {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        let full = UserDefaults.standard.bool(forKey: "healthFullCompleted")
-        let metricIDs: [HKQuantityTypeIdentifier] = full ? [.heartRate, .stepCount, .heartRateVariabilitySDNN] : [.heartRate]
-        for identifier in metricIDs {
-            guard observedTypeIDs.insert(identifier.rawValue).inserted else { continue }
-            guard let type = HKObjectType.quantityType(forIdentifier: identifier) else { continue }
-            let observer = HKObserverQuery(sampleType: type, predicate: nil) { _, finished, error in
-                guard error == nil else { finished(); return }
+        for metric in observedMetrics {
+            guard let type=metric.sampleType else { continue }
+            guard observedTypeIDs.insert(metric.id).inserted else { continue }
+            let observer=HKObserverQuery(sampleType:type,predicate:nil) { _, completion, error in
+                guard error == nil else { completion();return }
                 Task { @MainActor in
-                    // The sync engine persists rows before acknowledging the observer event.
-                    // An unsuccessful upload stays in the local durable queue for catch-up.
+                    // OS controls wakeups. The next anchored catch-up also runs at app launch.
+                    // Queue and remote append are crash-safe and UUID-deduplicated.
                     await SyncEngine.shared.sync()
-                    finished()
+                    completion()
                 }
             }
             observers.append(observer)
             store.execute(observer)
         }
     }
-
     func enableBackgroundNotifications() async {
         installObserverQueries()
-        let types: [HKQuantityTypeIdentifier] = UserDefaults.standard.bool(forKey: "healthFullCompleted") ?
-            [.heartRate, .stepCount, .heartRateVariabilitySDNN] : [.heartRate]
-        for id in types {
-            guard let type = HKObjectType.quantityType(forIdentifier: id) else { continue }
-            _ = try? await store.enableBackgroundDelivery(for: type, frequency: .hourly)
+        for metric in observedMetrics {
+            guard let type=metric.sampleType else { continue }
+            _ = try? await store.enableBackgroundDelivery(for:type,frequency:.hourly)
         }
     }
+
 }
 
 func rawRow(_ sample: HKSample, metric: Metric) -> ExportRow {

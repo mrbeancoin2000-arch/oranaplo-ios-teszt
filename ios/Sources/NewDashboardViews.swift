@@ -153,6 +153,7 @@ struct AnalysisDashboardView:View {
     @Environment(\.openURL) private var openURL
     @State private var rowCount:Int?
     @State private var loading=false
+    @State private var showWellness=false
     @State private var failed=false
     private var language:AppLanguage { AppLanguage(rawValue:languageCode) ?? .hu }
     private func t(_ key:String)->String { NewScreenText.t(key,language) }
@@ -190,6 +191,15 @@ struct AnalysisDashboardView:View {
                     }
                 }
                 if failed { Text(t("analysis.error")).font(.caption).foregroundStyle(.orange) }
+            }
+            DashCard(title:NewScreenText.t("tab.analysis",language),icon:"heart.text.clipboard") {
+                Button { showWellness = true } label: {
+                    Label(language == "de" ? "Gesundheit, Schlaf, Medikamente und PDF" :
+                          language == "en" ? "Health, sleep, medications and PDF" :
+                          "Egészség, alvás, gyógyszerek és PDF",systemImage:"heart.text.clipboard")
+                       .frame(maxWidth:.infinity).padding(12)
+                       .background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:12))
+                }
             }
             DashCard(title:t("analysis.sync"),icon:"arrow.triangle.2.circlepath") {
                 HStack {
@@ -238,6 +248,7 @@ struct AnalysisDashboardView:View {
             }
             Text(t("analysis.dataSince")).font(.caption2).foregroundStyle(DashPalette.text)
         }.task(id:engine.sheetID) { await count() }
+        .sheet(isPresented:$showWellness) { WellnessDashboardView() }
     }
     private func count() async {
         guard !loading,engine.account.loggedIn,!engine.sheetID.isEmpty else { return }

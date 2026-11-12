@@ -1,3 +1,14 @@
+# Funkciók és valós állapot – 0.7.0 fejlesztői előzetes (2026-11-12)
+
+A megvalósult forráskód **nem egyenlő** az Apple SDK-val tesztelt, aláírt vagy éles eszközökön megerősített funkcióval.
+
+- **Forrásban megvalósult / eszközön még tesztelendő:** háttérszinkron megfigyelés bővítése; 7/30/90 nap RHR/HRV; korreláció; edzés utáni 1/2/3/4/5/10 perc; alvásfázisok, alvásrendszeresség, alváselmaradás, hőmérséklet/légzés; gyógyszer/víz/CO₂ kézi napló; PDF; futás GPS-színezés, emelkedés, szakaszadatok, összehasonlítás; szokatlan RHR opt-in jelzés; Watch víz + akku.
+- **Korábban már a 0.6.4-ben is implementált, újra ellenőrizendő:** HealthKit ISO időbélyeg, UUID, forrás, anchored import, feltöltési sor/újrapróbálás, Sheets, GPS 100 m, rekord, Watch edzés.
+- **Csak tervező/prototípus:** intervallumedzés-tervező (nem automatikus edzés); Watch és iOS WidgetKit extension kód (nincs beépítve az IPA-ba); külső CO₂-szenzor-integráció nincs.
+- **Kiadás blokkolói:** iOS és watchOS 0.7.0 Apple SDK build; valódi HealthKit/Sheets 7 nap; aláírt Watch telepítés; célplatform widgetek/App Group; tri-language kézi QA; StoreKit/Supabase Sandbox; TestFlight.
+
+Részletesen: `README_070_KIADAS_ELOTT.md`.
+
 # Funkciók és valós megvalósítási státusz (2026-11-10)
 
 | Funkció | Prototípus forrása | Feltétel / korlát |

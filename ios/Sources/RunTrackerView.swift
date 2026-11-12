@@ -1,6 +1,7 @@
 import SwiftUI
 import MapKit
 import CoreLocation
+import HealthKit
 
 /// Native iPhone workout screen. Runs without a Google account; HealthKit pulse is optional.
 struct RunTrackerView: View {
@@ -12,6 +13,8 @@ struct RunTrackerView: View {
     @State private var camera: MapCameraPosition = .userLocation(followsHeading:false,fallback:.automatic)
     @State private var manualWeight = ""
     @State private var weeklyGoalText = ""
+    @State private var realRunningPower:Double?
+    @State private var realRunningStride:Double?
     @State private var shareCardURL: URL?
     @State private var shareCardError = ""
     @State private var generatingCard = false
@@ -23,6 +26,38 @@ struct RunTrackerView: View {
     private let bg = Color(red:0.035,green:0.055,blue:0.085)
     private let card = Color(red:0.11,green:0.15,blue:0.20)
     private let blue = Color(red:0.44,green:0.73,blue:0.99)
+    private struct ColoredRoute: Identifiable {
+        let id:Int
+        let coordinates:[CLLocationCoordinate2D]
+        let speed:Double
+        var color:Color { speed >= 12 ? .red : speed >= 8 ? .orange : speed >= 4 ? .green : .blue }
+    }
+    private var coloredRoutes:[ColoredRoute] {
+        guard let route=tracker.current?.route,route.count > 1 else { return [] }
+        var results:[ColoredRoute]=[]
+        for i in 1..<route.count {
+            let previous=route[i-1], next=route[i]
+            guard !next.breakBefore,next.activeSeconds > previous.activeSeconds else { continue }
+            let speed=max(0,next.cumulativeMeters-previous.cumulativeMeters)/(next.activeSeconds-previous.activeSeconds)*3.6
+            guard speed.isFinite else { continue }
+            results.append(ColoredRoute(id:i,coordinates:[
+                CLLocationCoordinate2D(latitude:previous.latitude,longitude:previous.longitude),
+                CLLocationCoordinate2D(latitude:next.latitude,longitude:next.longitude)],speed:speed))
+        }
+        return results
+    }
+    private var elevationGain:Double? {
+        guard let points=tracker.current?.route else { return nil }
+        let elevations=points.compactMap(\.altitudeMeters)
+        guard elevations.count >= 3 else { return nil }
+        var result=0.0
+        if points.count > 1 { for i in 1..<points.count {
+            guard !points[i].breakBefore,let a=points[i-1].altitudeMeters,let b=points[i].altitudeMeters else { continue }
+            if b-a > 2 { result += b-a }
+        } }
+        return result
+    }
+
 
     var body: some View {
         ZStack {
@@ -125,10 +160,9 @@ struct RunTrackerView: View {
             Label(t("run.map"),systemImage:"map").font(.headline).foregroundStyle(.white)
             if !tracker.routeCoordinates.isEmpty {
                 Map(position:$camera) {
-                    ForEach(tracker.routeSegments.indices,id: \.self) { index in
-                        if tracker.routeSegments[index].count > 1 {
-                            MapPolyline(coordinates:tracker.routeSegments[index]).stroke(blue,lineWidth:5)
-                        }
+                    ForEach(coloredRoutes) { segment in
+                        MapPolyline(coordinates:segment.coordinates)
+                            .stroke(segment.color,lineWidth:5)
                     }
                     if let first=tracker.routeCoordinates.first {
                         Annotation(t("run.startPoint"),coordinate:first) {
@@ -178,6 +212,7 @@ struct RunTrackerView: View {
             tile("run.metric.calories",tracker.kcal.map { String(format:"~%.0f kcal",$0) } ?? "—","flame")
             tile("run.metric.hr",tracker.current?.heart.last.map { String(format:"%.0f bpm",$0.bpm) } ?? "—","heart")
             tile("run.metric.splits",String(tracker.splits.count),"square.stack.3d.up")
+            tile(language == "de" ? "Höhenanstieg" : language == "en" ? "Elevation gain" : "Szintemelkedés",elevationGain.map { String(format:"%.0f m",$0) } ?? "—","mountain.2")
         }
     }
     private func tile(_ key:String,_ value:String,_ icon:String) -> some View {
@@ -201,6 +236,10 @@ struct RunTrackerView: View {
                let bpm = watch.watchBPM {
                 Text(String(format:"%.0f bpm · %@",bpm,
                     date.formatted(date:.omitted,time:.shortened))).font(.headline)
+            }
+            if let battery=watch.watchBatteryPercent {
+                Text("Apple Watch: \(battery)%" + (watch.watchCharging ? " ⚡" : ""))
+                    .font(.caption)
             }
             Text(t("run.watch.note")).font(.caption2).foregroundStyle(.white.opacity(0.60))
         }.padding(15).frame(maxWidth:.infinity,alignment:.leading)
@@ -321,12 +360,36 @@ struct RunTrackerView: View {
                     }
                 }
             }
+            if let other=tracker.history.first(where:{ AdvancedRunMath.compare(run,$0) != nil }),
+               let comparison=AdvancedRunMath.compare(run,other) {
+                Text((language == "en" ? "Matching route: " : language == "de" ? "Gleiche Route: " : "Hasonló útvonal: ") +
+                     String(format:"%+.1f s",comparison.timeDifferenceSeconds))
+                    .font(.caption).foregroundStyle(blue)
+            }
+            if let w=realRunningPower {
+                Text(String(format:(language == "de" ? "Laufleistung (HealthKit): %.0f W" : language == "en" ? "Running power (HealthKit): %.0f W" : "Futóteljesítmény (HealthKit): %.0f W"),w))
+                    .font(.caption).foregroundStyle(blue)
+            }
+            if let stride=realRunningStride {
+                Text(String(format:(language == "de" ? "Schrittlänge (HealthKit): %.2f m" : language == "en" ? "Running stride (HealthKit): %.2f m" : "Futási lépéshossz (HealthKit): %.2f m"),stride))
+                    .font(.caption).foregroundStyle(blue)
+            }
+            let gradeSpeeds=AdvancedRunMath.gradeSpeed(run.route)
+            if let uphill=gradeSpeeds.uphillKmh {
+                Text((language == "de" ? "Bergauf" : language == "en" ? "Uphill" : "Emelkedő") +
+                     String(format:": %.1f km/h",uphill)).font(.caption)
+            }
+            if let downhill=gradeSpeeds.downhillKmh {
+                Text((language == "de" ? "Bergab" : language == "en" ? "Downhill" : "Lejtő") +
+                     String(format:": %.1f km/h",downhill)).font(.caption)
+            }
             if !run.splits.isEmpty {
                 HStack {
                     Text(t("run.splits.title")).font(.headline)
                     Spacer()
                     Text("\(run.splits.count) × 100 m").font(.caption).foregroundStyle(.white.opacity(0.7))
                 }
+                let advanced=AdvancedRunMath.analyze(run)
                 ForEach(run.splits) { s in
                     VStack(alignment:.leading,spacing:5) {
                         HStack {
@@ -341,6 +404,14 @@ struct RunTrackerView: View {
                             if let steps=s.steps { Text("\(steps) \(t("run.step.unit"))") }
                             if let c=s.estimatedKcal { Text(String(format:"~%.0f kcal",c)) }
                         }.font(.caption).foregroundStyle(.white.opacity(0.65))
+                        if let metrics=advanced.first(where:{$0.index == s.index}) {
+                            HStack(spacing:10) {
+                                if let c=metrics.cadence { Text(String(format:"%.0f \(language == "de" ? "Schritte/min" : language == "en" ? "steps/min" : "lépés/perc")",c)) }
+                                if let d=metrics.estimatedStrideM { Text(String(format:"~%.2f m/\(language == "de" ? "Schritt" : language == "en" ? "step" : "lépés")",d)) }
+                                if let a=metrics.ascentM { Text(String(format:"+%.0f m",a)) }
+                                if let d=metrics.descentM { Text(String(format:"-%.0f m",d)) }
+                            }.font(.caption2).foregroundStyle(blue)
+                        }
                     }.padding(11).background(Color.black.opacity(0.2),in:RoundedRectangle(cornerRadius:12))
                 }
             } else {
@@ -399,6 +470,20 @@ struct RunTrackerView: View {
                     .frame(maxWidth:.infinity).padding(10)
             }
         }.padding(16).background(card,in:RoundedRectangle(cornerRadius:22))
+         .task(id:run.id) { await loadRealRunMetrics(run) }
+    }
+    private func loadRealRunMetrics(_ run:RecordedRun) async {
+        realRunningPower=nil;realRunningStride=nil
+        guard UserDefaults.standard.bool(forKey:"healthFullCompleted"),let end=run.ended else { return }
+        func mean(_ id:HKQuantityTypeIdentifier,unit:HKUnit) async -> Double? {
+            guard let type=HKObjectType.quantityType(forIdentifier:id),
+                  let samples=try? await HealthReader.shared.samples(type,since:run.started,until:end,limit:20000) else { return nil }
+            let values=samples.compactMap { ($0 as? HKQuantitySample)?.quantity.doubleValue(for:unit) }
+                                .filter { $0.isFinite && $0 > 0 }
+            return values.isEmpty ? nil : values.reduce(0,+)/Double(values.count)
+        }
+        realRunningPower=await mean(.runningPower,unit:.watt())
+        realRunningStride=await mean(.runningStrideLength,unit:.meter())
     }
     private func recentCard(_ run:RecordedRun) -> some View {
         Button { tracker.select(run) } label: {

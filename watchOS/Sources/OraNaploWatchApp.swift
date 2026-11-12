@@ -37,6 +37,19 @@ struct WatchRunView:View {
                 } else {
                     ProgressView()
                 }
+                HStack {
+                    Text(t("Akkumulátor","Battery","Akku") + ": " +
+                         (workout.batteryPercent.map { "\($0)%" } ?? "—"))
+                    if workout.batteryCharging { Image(systemName:"bolt.fill") }
+                    Button { workout.refreshBattery() } label:{ Image(systemName:"arrow.clockwise") }
+                }.font(.caption2)
+                HStack {
+                    Button("+200 ml") { workout.logWater(200) }
+                    Button("+300 ml") { workout.logWater(300) }
+                }.font(.caption2)
+                if workout.lastWaterML > 0 {
+                    Text(t("Víz rögzítve","Water saved","Wasser gespeichert") + " +\(workout.lastWaterML) ml").font(.caption2)
+                }
                 if !workout.info.isEmpty { Text(workout.info).font(.caption2) }
                 Picker(t("Nyelv","Language","Sprache"),selection:Binding(
                     get:{language},set:{UserDefaults.standard.set($0,forKey:"oranaplo.app.language")})) {

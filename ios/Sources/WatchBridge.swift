@@ -9,6 +9,8 @@ final class WatchBridge: NSObject, ObservableObject {
     static let shared = WatchBridge()
     @Published private(set) var reachable = false
     @Published private(set) var watchBPM: Double?
+    @Published private(set) var watchBatteryPercent: Int?
+    @Published private(set) var watchCharging = false
     @Published private(set) var watchMeters: Double?
     @Published private(set) var watchElapsed: Double?
     @Published private(set) var lastWatchUpdate: Date?
@@ -33,6 +35,25 @@ final class WatchBridge: NSObject, ObservableObject {
     }
     private func receive(_ values: [String:Any]) {
         switch values["kind"] as? String {
+        case "watchStatus":
+            if let percent=values["battery"] as? Int,(0...100).contains(percent) { watchBatteryPercent=percent }
+            if let charging=values["charging"] as? Bool { watchCharging=charging }
+            lastWatchUpdate=Date()
+        case "water":
+            guard let identifier=values["id"] as? String,let uuid=UUID(uuidString:identifier),
+                  let ml=values["milliliters"] as? Int, [200,300].contains(ml),
+                  let timestamp=values["at"] as? Double, timestamp.isFinite,
+                  abs(Date().timeIntervalSince1970-timestamp) < 365*86400 else { return }
+            // Persist first; a failed write must not become a false acknowledgement.
+            do {
+                try WellnessDiary.shared.addWater(ml,source:"Apple Watch",at:Date(timeIntervalSince1970:timestamp),id:uuid)
+                // Acknowledgement comes AFTER atomic disk write. The watch retries
+                // until this durable acknowledgement is received.
+                if let session,session.activationState == .activated {
+                    session.transferUserInfo(["kind":"waterAck","id":identifier])
+                }
+            } catch { lastWatchMessage = "watch.status.sendFailed" }
+
         case "metrics":
             if let bpm = values["bpm"] as? Double, (25...250).contains(bpm) { watchBPM = bpm }
             if let meters = values["meters"] as? Double, meters >= 0 { watchMeters = meters }

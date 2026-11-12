@@ -10,6 +10,7 @@ struct RunRoutePoint: Codable, Equatable {
     var activeSeconds: Double
     var cumulativeMeters: Double
     var breakBefore: Bool
+    var altitudeMeters: Double? = nil // GPS altitude, only when vertical accuracy is valid
 }
 
 struct RunPulsePoint: Codable, Equatable {

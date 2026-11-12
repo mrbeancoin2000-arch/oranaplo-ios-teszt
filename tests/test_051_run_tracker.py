@@ -79,7 +79,7 @@ class RunTrackerIntegrationTests(unittest.TestCase):
         for marker in ('func splits(', '100.0','func pace(', 'func speed(',
                        'func wallDate(forActive','func activeTime(of','estimatedRunningKcal('):
             self.assertIn(marker,self.core)
-        self.assertIn('MapPolyline(coordinates:tracker.routeSegments[index])',self.view)
+        self.assertTrue('MapPolyline(coordinates:tracker.routeSegments[index])' in self.view or 'MapPolyline(coordinates:segment.coordinates)' in self.view)
         self.assertIn('if point.breakBefore && !segment.isEmpty',self.tracker)
         self.assertIn('activeSeconds',self.core)
 

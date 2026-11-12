@@ -42,7 +42,7 @@ class ReadinessTests(unittest.TestCase):
         self.assertTrue(ent['com.apple.developer.healthkit'])
         self.assertTrue(ent['com.apple.developer.healthkit.background-delivery'])
         self.assertIn('HKObserverQuery', (S/'HealthReader.swift').read_text(encoding='utf8'))
-        self.assertIn('finished()', (S/'HealthReader.swift').read_text(encoding='utf8'))
+        self.assertRegex((S/'HealthReader.swift').read_text(encoding='utf8'), r'(finished|completion)\(\)')
     def test_local_storekit_one_year_id_and_translations(self):
         import json
         obj=json.loads((R/'tests/storekit/OraNaplo_Annual_Offline.storekit').read_text(encoding='utf8'))

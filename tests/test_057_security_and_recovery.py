@@ -6,7 +6,7 @@ def swift(name):return (S/name).read_text(encoding='utf-8')
 class ReleaseStabilityTests(unittest.TestCase):
     def test_current_version(self):
         plist=plistlib.loads((P/'ios/Resources/Info.plist').read_bytes())
-        self.assertEqual(plist['CFBundleShortVersionString'],'0.6.1')
+        self.assertEqual(plist['CFBundleShortVersionString'],'0.7.0')
         self.assertIn('location',plist['UIBackgroundModes'])
 
     def test_actual_sync_status_is_per_google_account(self):

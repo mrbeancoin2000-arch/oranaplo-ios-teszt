@@ -127,6 +127,7 @@ final class SyncEngine: ObservableObject {
 
     private func loadCurrentAccount() async {
         guard account.loggedIn else {
+            WellnessDiary.shared.selectAccount("")
             sheetID = ""
             pendingCount = 0
             lastSync = "–"; lastSuccessfulDate = nil; lastAttemptDate = nil; lastFailureKind = ""; autoSyncPaused = false
@@ -136,6 +137,7 @@ final class SyncEngine: ObservableObject {
         guard !email.isEmpty else { sheetID = ""; return }
         do {
             try await queue.selectAccount(email)
+            WellnessDiary.shared.selectAccount(email)
             sheetID = SpreadsheetRegistry.sheetID(for: email)
             pendingCount = await queue.count()
             // Sync state must be scoped by Google identity, not by a global date.
@@ -179,6 +181,7 @@ final class SyncEngine: ObservableObject {
     func disconnectGoogle() async {
         guard !busy else { return }
         account.signOut()
+        WellnessDiary.shared.selectAccount("")
         sheetID = ""
         pendingCount = 0
         lastSync = "–"; lastSuccessfulDate = nil; lastAttemptDate = nil; lastFailureKind = ""
@@ -228,6 +231,7 @@ final class SyncEngine: ObservableObject {
     func eraseLocalHistory() async throws {
         guard !busy else { throw SyncError.config("A szinkron befejezése után törölhetsz.") }
         guard RunTracker.shared.phase != .recording else { throw RunStorageError.activeWorkout }
+        try WellnessDiary.shared.erase() // Medication, sleep rating, water and room data too.
         let identity=syncAccountKey
         if !identity.isEmpty {
             try await queue.selectAccount(identity)

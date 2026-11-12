@@ -63,4 +63,4 @@ class NewDesignChecks(unittest.TestCase):
     def test_plist(self):
         with (P/'ios/Resources/Info.plist').open('rb') as f: data=plistlib.load(f)
         self.assertIn('location',data['UIBackgroundModes'])
-        self.assertEqual(data['CFBundleShortVersionString'],'0.6.1')
+        self.assertEqual(data['CFBundleShortVersionString'],'0.7.0')

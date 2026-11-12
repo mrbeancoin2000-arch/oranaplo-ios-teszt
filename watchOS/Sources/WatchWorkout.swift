@@ -1,6 +1,7 @@
 import SwiftUI
 import HealthKit
 import WatchConnectivity
+import WatchKit
 
 @MainActor
 final class WatchWorkout: NSObject, ObservableObject {
@@ -10,6 +11,9 @@ final class WatchWorkout: NSObject, ObservableObject {
     @Published private(set) var meters: Double = 0
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var info = ""
+    @Published private(set) var batteryPercent: Int?
+    @Published private(set) var batteryCharging = false
+    @Published private(set) var lastWaterML = 0
     private let health = HKHealthStore()
     private var workout: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
@@ -21,10 +25,42 @@ final class WatchWorkout: NSObject, ObservableObject {
     private var workoutID = UUID().uuidString
     private static let pendingKey = "oranaplo.watch.pending.completed.v1"
     private var lastBeat: Double?
+    private var lastBatteryTransfer = Date.distantPast
     override init() {
         super.init()
+        WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
+        refreshBattery()
         connect?.delegate = self
         connect?.activate()
+    }
+    func refreshBattery() {
+        let device=WKInterfaceDevice.current()
+        device.isBatteryMonitoringEnabled = true
+        let level=device.batteryLevel
+        batteryPercent=level >= 0 ? Int(level*100) : nil
+        batteryCharging=device.batteryState == .charging || device.batteryState == .full
+        let payload:[String:Any]=["kind":"watchStatus","battery":batteryPercent ?? -1,
+                                   "charging":batteryCharging,"at":Date().timeIntervalSince1970]
+        if let connect,connect.isReachable {
+            connect.sendMessage(payload,replyHandler:nil,errorHandler:nil)
+        } else if Date().timeIntervalSince(lastBatteryTransfer) >= 3600,
+                  let connect,connect.activationState == .activated {
+            // Hourly durable status, not a transfer for every one-second clock tick.
+            connect.transferUserInfo(payload)
+            lastBatteryTransfer=Date()
+        }
+    }
+    // Data is saved locally on the watch before the durable WatchConnectivity transfer.
+    func logWater(_ milliliters:Int) {
+        guard milliliters == 200 || milliliters == 300 else { return }
+        let payload:[String:Any]=["kind":"water","id":UUID().uuidString,
+                                   "milliliters":milliliters,"at":Date().timeIntervalSince1970]
+        let key="oranaplo.watch.pending.water.v1"
+        var buffer=UserDefaults.standard.array(forKey:key) as? [[String:Any]] ?? []
+        buffer.append(payload)
+        UserDefaults.standard.set(buffer,forKey:key)
+        lastWaterML=milliliters
+        flushCompletedWorkouts()
     }
     func start() {
         guard phase == .ready || phase == .finished else { return }
@@ -93,6 +129,7 @@ final class WatchWorkout: NSObject, ObservableObject {
             Task { @MainActor in
                 guard let self, let beganAt = self.beganAt, self.phase == .running else { return }
                 self.elapsed = max(0,Date().timeIntervalSince(beganAt)-self.pausedSeconds)
+                self.refreshBattery()
                 self.sendMetrics()
             }
         }
@@ -115,6 +152,10 @@ final class WatchWorkout: NSObject, ObservableObject {
         let buffer = UserDefaults.standard.array(forKey: Self.pendingKey) as? [[String:Any]] ?? []
         for payload in buffer { connect.transferUserInfo(payload) }
         UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+        let key="oranaplo.watch.pending.water.v1"
+        let water=UserDefaults.standard.array(forKey:key) as? [[String:Any]] ?? []
+        // Keep locally until the iPhone confirms durable storage. Resends use UUID IDs.
+        for payload in water { connect.transferUserInfo(payload) }
     }
     private func sendControl(_ action:String) {
         guard let connect, connect.isReachable else { return }
@@ -127,6 +168,13 @@ final class WatchWorkout: NSObject, ObservableObject {
         connect.sendMessage(values,replyHandler:nil,errorHandler:nil)
     }
     private func apply(_ values:[String:Any]) {
+        if values["kind"] as? String == "waterAck",let id=values["id"] as? String {
+            let key="oranaplo.watch.pending.water.v1"
+            var pending=UserDefaults.standard.array(forKey:key) as? [[String:Any]] ?? []
+            pending.removeAll { ($0["id"] as? String) == id }
+            UserDefaults.standard.set(pending,forKey:key)
+            return
+        }
         guard values["kind"] as? String == "control", let action=values["action"] as? String else { return }
         switch action {
         case "start": start()
@@ -166,7 +214,12 @@ extension WatchWorkout: WCSessionDelegate {
     nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
         Task { @MainActor in self.flushCompletedWorkouts() }
     }
-    nonisolated func sessionReachabilityDidChange(_ session: WCSession) { }
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
+        Task { @MainActor in self.flushCompletedWorkouts() }
+    }
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo:[String:Any]) {
+        Task { @MainActor in self.apply(userInfo) }
+    }
     nonisolated func session(_ session: WCSession, didReceiveMessage message:[String:Any]) {
         Task { @MainActor in self.apply(message) }
     }

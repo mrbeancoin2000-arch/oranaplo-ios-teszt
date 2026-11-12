@@ -74,6 +74,17 @@ if shutil.which('swiftc'):
     step('Support and locale Swift compilation',['swiftc','-O','ios/Sources/L10n.swift','ios/Sources/OpsText.swift',
          'ios/Sources/SafeDiagnosticTrail.swift','ios/Sources/SafeSupportPayload.swift','tests/runtime_ops_main.swift','-o',str(ops_binary)])
     if ops_binary.exists(): step('Support and locale Swift runtime',[str(ops_binary)])
+if shutil.which('swiftc'):
+    wellness_binary=OUT/('wellness-core-test.exe' if platform.system()=='Windows' else 'wellness-core-test')
+    step('Wellness analysis core compilation',['swiftc','-O','ios/Sources/WellnessCore.swift',
+         'tests/runtime_wellness_main.swift','-o',str(wellness_binary)])
+    if wellness_binary.exists(): step('Wellness analysis core runtime',[str(wellness_binary)])
+    advanced_binary=OUT/('advanced-run-test.exe' if platform.system()=='Windows' else 'advanced-run-test')
+    step('Advanced run core compilation',['swiftc','-O','ios/Sources/RunMathCore.swift',
+         'ios/Sources/AdvancedRunCore.swift','tests/runtime_advanced_run_main.swift','-o',str(advanced_binary)])
+    if advanced_binary.exists(): step('Advanced run core runtime',[str(advanced_binary)])
+    step('WatchKit source syntax',['swiftc','-frontend','-parse',
+         *[str(p) for p in sorted((ROOT/'watchOS/Sources').glob('*.swift'))]])
 step('Draft release metadata check',[sys.executable,'tools/release_preflight.py'])
 # The strict gate MUST fail until post-payment App Store IDs, URL/contact and signing are done.
 step('Production release gate',[sys.executable,'tools/release_preflight.py','--strict'],expected_exit=1)
