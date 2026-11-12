@@ -212,7 +212,7 @@ struct RunTrackerView: View {
             tile("run.metric.calories",tracker.kcal.map { String(format:"~%.0f kcal",$0) } ?? "—","flame")
             tile("run.metric.hr",tracker.current?.heart.last.map { String(format:"%.0f bpm",$0.bpm) } ?? "—","heart")
             tile("run.metric.splits",String(tracker.splits.count),"square.stack.3d.up")
-            tile(language == "de" ? "Höhenanstieg" : language == "en" ? "Elevation gain" : "Szintemelkedés",elevationGain.map { String(format:"%.0f m",$0) } ?? "—","mountain.2")
+            tile(language == .de ? "Höhenanstieg" : language == .en ? "Elevation gain" : "Szintemelkedés",elevationGain.map { String(format:"%.0f m",$0) } ?? "—","mountain.2")
         }
     }
     private func tile(_ key:String,_ value:String,_ icon:String) -> some View {
@@ -362,25 +362,25 @@ struct RunTrackerView: View {
             }
             if let other=tracker.history.first(where:{ AdvancedRunMath.compare(run,$0) != nil }),
                let comparison=AdvancedRunMath.compare(run,other) {
-                Text((language == "en" ? "Matching route: " : language == "de" ? "Gleiche Route: " : "Hasonló útvonal: ") +
+                Text((language == .en ? "Matching route: " : language == .de ? "Gleiche Route: " : "Hasonló útvonal: ") +
                      String(format:"%+.1f s",comparison.timeDifferenceSeconds))
                     .font(.caption).foregroundStyle(blue)
             }
             if let w=realRunningPower {
-                Text(String(format:(language == "de" ? "Laufleistung (HealthKit): %.0f W" : language == "en" ? "Running power (HealthKit): %.0f W" : "Futóteljesítmény (HealthKit): %.0f W"),w))
+                Text(String(format:(language == .de ? "Laufleistung (HealthKit): %.0f W" : language == .en ? "Running power (HealthKit): %.0f W" : "Futóteljesítmény (HealthKit): %.0f W"),w))
                     .font(.caption).foregroundStyle(blue)
             }
             if let stride=realRunningStride {
-                Text(String(format:(language == "de" ? "Schrittlänge (HealthKit): %.2f m" : language == "en" ? "Running stride (HealthKit): %.2f m" : "Futási lépéshossz (HealthKit): %.2f m"),stride))
+                Text(String(format:(language == .de ? "Schrittlänge (HealthKit): %.2f m" : language == .en ? "Running stride (HealthKit): %.2f m" : "Futási lépéshossz (HealthKit): %.2f m"),stride))
                     .font(.caption).foregroundStyle(blue)
             }
             let gradeSpeeds=AdvancedRunMath.gradeSpeed(run.route)
             if let uphill=gradeSpeeds.uphillKmh {
-                Text((language == "de" ? "Bergauf" : language == "en" ? "Uphill" : "Emelkedő") +
+                Text((language == .de ? "Bergauf" : language == .en ? "Uphill" : "Emelkedő") +
                      String(format:": %.1f km/h",uphill)).font(.caption)
             }
             if let downhill=gradeSpeeds.downhillKmh {
-                Text((language == "de" ? "Bergab" : language == "en" ? "Downhill" : "Lejtő") +
+                Text((language == .de ? "Bergab" : language == .en ? "Downhill" : "Lejtő") +
                      String(format:": %.1f km/h",downhill)).font(.caption)
             }
             if !run.splits.isEmpty {
@@ -406,8 +406,8 @@ struct RunTrackerView: View {
                         }.font(.caption).foregroundStyle(.white.opacity(0.65))
                         if let metrics=advanced.first(where:{$0.index == s.index}) {
                             HStack(spacing:10) {
-                                if let c=metrics.cadence { Text(String(format:"%.0f \(language == "de" ? "Schritte/min" : language == "en" ? "steps/min" : "lépés/perc")",c)) }
-                                if let d=metrics.estimatedStrideM { Text(String(format:"~%.2f m/\(language == "de" ? "Schritt" : language == "en" ? "step" : "lépés")",d)) }
+                                if let c=metrics.cadence { Text(String(format:"%.0f \(language == .de ? "Schritte/min" : language == .en ? "steps/min" : "lépés/perc")",c)) }
+                                if let d=metrics.estimatedStrideM { Text(String(format:"~%.2f m/\(language == .de ? "Schritt" : language == .en ? "step" : "lépés")",d)) }
                                 if let a=metrics.ascentM { Text(String(format:"+%.0f m",a)) }
                                 if let d=metrics.descentM { Text(String(format:"-%.0f m",d)) }
                             }.font(.caption2).foregroundStyle(blue)

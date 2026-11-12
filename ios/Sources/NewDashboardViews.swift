@@ -194,8 +194,8 @@ struct AnalysisDashboardView:View {
             }
             DashCard(title:NewScreenText.t("tab.analysis",language),icon:"heart.text.clipboard") {
                 Button { showWellness = true } label: {
-                    Label(language == "de" ? "Gesundheit, Schlaf, Medikamente und PDF" :
-                          language == "en" ? "Health, sleep, medications and PDF" :
+                    Label(language == .de ? "Gesundheit, Schlaf, Medikamente und PDF" :
+                          language == .en ? "Health, sleep, medications and PDF" :
                           "Egészség, alvás, gyógyszerek és PDF",systemImage:"heart.text.clipboard")
                        .frame(maxWidth:.infinity).padding(12)
                        .background(.white.opacity(0.08),in:RoundedRectangle(cornerRadius:12))
