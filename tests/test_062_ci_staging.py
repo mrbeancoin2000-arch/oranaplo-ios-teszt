@@ -27,6 +27,13 @@ class TestCIStaging062(unittest.TestCase):
             (stage/'tests/fixtures/qa_061/NAPI_SZINKRON_NAPLO_TEMPLATE.csv').unlink()
             self.assertTrue(any('Missing GitHub build input' in x for x in check(stage)))
 
+    def test_missing_widget_sources_stops_before_github_push(self):
+        for rel in ('widgets/iOS/OraNaploWidgets.swift', 'widgets/watchOS/OraNaploWatchWidgets.swift'):
+            with self.subTest(source=rel), TemporaryDirectory() as directory:
+                stage = self.stage(directory)
+                (stage/rel).unlink()
+                self.assertTrue(any(rel in message for message in check(stage)))
+
     def test_private_qa_log_never_uploaded(self):
         with TemporaryDirectory() as directory:
             stage=self.stage(directory)

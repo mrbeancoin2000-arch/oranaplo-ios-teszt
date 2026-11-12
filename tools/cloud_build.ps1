@@ -92,6 +92,9 @@ try {
  Add-ByExtension 'ios\Resources\Assets.xcassets' @('.json','.png','.jpg','.jpeg') $true
  Add-ByExtension 'tools' @('.ps1','.py','.sh') $false
  Add-ByExtension 'watchOS' @('.swift','.plist','.entitlements') $true
+ # WidgetKit source files are reference-only: upload them for offline CI tests,
+ # but DO NOT add widget extension targets to project.watch.yml / the unsigned IPA.
+ Add-ByExtension 'widgets' @('.swift','.md') $true
  Add-ByExtension 'tests' @('.py','.html','.swift','.js','.mjs','.xml','.json','.storekit') $true
  # Only synthetic, intentionally blank CSV fixture. NEVER upload real QA logs.
  Add-Approved 'tests\fixtures\qa_061\NAPI_SZINKRON_NAPLO_TEMPLATE.csv'

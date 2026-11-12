@@ -17,6 +17,10 @@ REQUIRED = (
     'tests/fixtures/apple_health_synthetic.xml',
     'tests/fixtures/qa_061/QA_STATUS_TEMPLATE.json',
     'tests/fixtures/qa_061/NAPI_SZINKRON_NAPLO_TEMPLATE.csv',
+    # Reference-only WidgetKit source files: required by the v0.7.0 tests.
+    # These must be uploaded to CI without being embedded in the IPA.
+    'widgets/iOS/OraNaploWidgets.swift',
+    'widgets/watchOS/OraNaploWatchWidgets.swift',
 )
 PRIVATE_FILES = (
     'google_oauth.json',
