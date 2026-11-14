@@ -30,12 +30,16 @@ final class SubscriptionManager: ObservableObject {
     deinit { updatesTask?.cancel() }
 
     func load() async {
+        DiagnosticCenter.record(.storeProductsBegin, area: .storekit)
         await refreshEntitlement()
         do {
             product = try await Product.products(for: [Self.productID]).first(where: { $0.id == Self.productID })
             if product == nil { messageKey = proActive ? "tier.active" : "tier.unavailable" }
+            DiagnosticCenter.record(product == nil ? .storeProductsFailed : .storeProductsReady, area: .storekit,
+                                    severity: product == nil ? .warning : .info)
         } catch {
             technicalError = error.localizedDescription
+            DiagnosticCenter.record(.storeProductsFailed, area: .storekit, severity: .failure)
             messageKey = proActive ? "tier.active" : "tier.unavailable"
         }
     }
@@ -56,30 +60,40 @@ final class SubscriptionManager: ObservableObject {
         proActive = verified
         expiration = expires
         messageKey = verified ? "tier.active" : "tier.expired"
+        DiagnosticCenter.record(.entitlementRefresh, area: .storekit)
     }
 
     func purchase() async {
         guard let product, !busy else { messageKey = "tier.unavailable"; return }
         busy = true
+        DiagnosticCenter.record(.purchaseBegin, area: .storekit)
         defer { busy = false }
         do {
-            let outcome = try await product.purchase()
+            let options: Set<Product.PurchaseOption> = ReferralService.shared.appAccountToken.map { [.appAccountToken($0)] } ?? []
+            let outcome = try await product.purchase(options: options)
             switch outcome {
             case .success(let result):
                 switch result {
                 case .verified(let transaction):
                     await transaction.finish()
                     await refreshEntitlement()
+                    DiagnosticCenter.record(.purchaseVerified, area: .storekit)
                     messageKey = proActive ? "tier.thanks" : "tier.problem"
                 case .unverified:
+                    DiagnosticCenter.record(.purchaseUnverified, area: .storekit, severity: .failure)
                     messageKey = "tier.problem"
                 }
-            case .pending: messageKey = "tier.pending"
-            case .userCancelled: messageKey = "tier.cancelled"
+            case .pending:
+                DiagnosticCenter.record(.purchasePending, area: .storekit)
+                messageKey = "tier.pending"
+            case .userCancelled:
+                DiagnosticCenter.record(.purchaseCancelled, area: .storekit)
+                messageKey = "tier.cancelled"
             @unknown default: messageKey = "tier.problem"
             }
         } catch {
             technicalError = error.localizedDescription
+            DiagnosticCenter.record(.purchaseFailed, area: .storekit, severity: .failure)
             messageKey = "tier.problem"
         }
     }
@@ -92,6 +106,7 @@ final class SubscriptionManager: ObservableObject {
             await refreshEntitlement()
         } catch {
             technicalError = error.localizedDescription
+            DiagnosticCenter.record(.restoreFailed, area: .storekit, severity: .failure)
             messageKey = "tier.problem"
         }
     }

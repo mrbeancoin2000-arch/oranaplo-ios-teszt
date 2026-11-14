@@ -11,6 +11,7 @@ final class HealthReader {
     private var observedTypeIDs: Set<String> = []
 
     func authorize(onlyHeartRate: Bool = false) async throws {
+        DiagnosticCenter.record(.healthPermissionBegin, area: .healthkit)
         CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: előkészítés" : "HealthKit teljes engedélykérés: előkészítés")
         guard HKHealthStore.isHealthDataAvailable() else {
             throw SyncError.config("Az Apple Egészség ezen a készüléken nem elérhető")
@@ -58,6 +59,7 @@ final class HealthReader {
             }
         }
         CrashCheckpoint.mark(onlyHeartRate ? "HealthKit alapteszt: engedélykérés visszatért" : "HealthKit teljes: engedélykérés visszatért")
+        DiagnosticCenter.record(.healthPermissionFinished, area: .healthkit)
     }
 
     /// Optional, separate consent for the local health profile and informational insights.

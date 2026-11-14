@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
-title OraNaplo 0.6.1 CI javitas - MINDEN EGY INDITASSAL
+title OraNaplo 0.8.0 ULTRA DEBUG - MINDEN EGY INDITASSAL
 color 1F
 set "ORANAPLO_FROM_ALL=1"
 set "PYTHONUTF8=1"
@@ -17,9 +17,10 @@ echo ==============================================================
 echo ORANAPLO - EGYGOMBOS WINDOWS ELLENORZES + iOS IPA BUILD
 echo ==============================================================
 echo [1/4] Windows eszkozok, Google konfiguracio, Python tesztek
-echo [2/4] Reszletes fizetes elotti tesztek, naplok, riport
-echo [3/4] GitHub macOS Swift + szimulator + iOS build, IPA letoltes
-echo [4/4] Letoltott IPA es telepitesi seged megnyitasa
+echo [2/5] Reszletes fizetes elotti tesztek, naplok, riport
+echo [3/5] 0.8 ULTRA DEBUG: tests + privacy + production release gate
+echo [4/5] GitHub macOS Swift + szimulator + iOS build, IPA letoltes
+echo [5/5] Letoltott IPA es telepitesi seged megnyitasa
 echo.
 echo Megjegyzes: GitHub engedely, bejelentkezes es az iPhone >> "!RUNLOG!"
 echo Sideloadly alairas/telepites szemelyes jovahagyast igenyel. >> "!RUNLOG!"
@@ -34,6 +35,11 @@ echo [%date% %time%] Indul !STAGE! >> "!RUNLOG!"
 call "%~dp005_FIZETES_ELOTTI_TESZTEK.bat"
 if errorlevel 1 goto :failed
 echo [%date% %time%] OK !STAGE! >> "!RUNLOG!"
+set "STAGE=07_ULTRA_DEBUG"
+echo [%date% %time%] Indul !STAGE! >> "!RUNLOG!"
+call "%~dp007_ULTRA_DEBUG.bat"
+if errorlevel 1 goto :failed
+echo [%date% %time%] OK !STAGE! >> "!RUNLOG!"
 set "STAGE=02_FELHOS_IPA_EPITES"
 echo [%date% %time%] Indul !STAGE! >> "!RUNLOG!"
 call "%~dp002_FELHOS_IPA_EPITES.bat"
@@ -46,7 +52,8 @@ if errorlevel 1 goto :failed
 echo [%date% %time%] OK !STAGE! >> "!RUNLOG!"
 echo.
 echo ==============================================================
-echo MINDEN AUTOMATIZALHATO LEPES SIKERES.
+echo MINDEN HELYI ES AUTOMATIZALHATO LEPES SIKERES.
+echo Az APP STORE release gate tovabbra is BLOCKED a valodi eszkoztesztekig.
 echo A HealthKit nem igazolt ingyenes Sideloadly alairassal.
 echo A telefonos IPA alairashoz es telepiteshez kezi jovahagyas kell.
 echo Naplok: logs\  ^|  IPA: output\OraNaplo-UNSIGNED.ipa

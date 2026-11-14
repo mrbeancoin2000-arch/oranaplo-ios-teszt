@@ -5,7 +5,7 @@ SRC = ROOT / "ios" / "Sources"
 class BusinessAndReliabilityTests(unittest.TestCase):
     def test_storekit_uses_verified_entitlements_not_local_toggle(self):
         src = (SRC / "SubscriptionManager.swift").read_text(encoding="utf-8")
-        for token in ("import StoreKit", "Transaction.currentEntitlements", "case .verified", "transaction.revocationDate == nil", "product.purchase()", "AppStore.sync()"): 
+        for token in ("import StoreKit", "Transaction.currentEntitlements", "case .verified", "transaction.revocationDate == nil", "product.purchase(options: options)", "AppStore.sync()"): 
             self.assertIn(token, src)
         self.assertNotIn("UserDefaults.standard.bool(forKey: \"isPremium\")", src)
 

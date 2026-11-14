@@ -99,11 +99,16 @@ struct SheetsAPI {
         req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.timeoutInterval = 55
         if let body { req.httpBody = try JSONSerialization.data(withJSONObject: body) }
+        // Privacy-safe operational events only: never log request URL, payload, access token or response body.
+        DiagnosticCenter.record(.sheetsRequestBegin, area: .sheets)
         for attempt in 0..<4 {
             do {
                 let (data, response) = try await URLSession.shared.data(for: req)
                 let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                if (200..<300).contains(status) { return data }
+                if (200..<300).contains(status) {
+                    DiagnosticCenter.record(.sheetsRequestFinished, area: .sheets)
+                    return data
+                }
                 if allowRetry && [429,500,502,503,504].contains(status) && attempt < 3 {
                     try await Task.sleep(for: .seconds(Double(1 << attempt))); continue
                 }
@@ -112,9 +117,11 @@ struct SheetsAPI {
                 if allowRetry && attempt < 3 && !(error is SyncError) {
                     try await Task.sleep(for: .seconds(Double(1 << attempt))); continue
                 }
+                DiagnosticCenter.record(.sheetsRequestFailed, area: .sheets, severity: .failure)
                 throw error
             }
         }
+        DiagnosticCenter.record(.sheetsRequestFailed, area: .sheets, severity: .failure)
         throw SyncError.config("Sikertelen adatküldés")
     }
     /// Best-effort recovery after reinstall or a second device. The drive.file OAuth

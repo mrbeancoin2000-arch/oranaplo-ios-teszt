@@ -17,5 +17,14 @@
   "gps_long_run_interruption_and_backup_recovery_tested": false,
   "supabase_rls_and_leaderboard_delete_tested": false,
   "bug_report_sends_privacy_safe_email_to_operator_tested": false,
-  "watchos_companion_embedded_signed_and_tested": false
+  "watchos_companion_embedded_signed_and_tested": false,
+  "referral_app_store_offer_codes_live_and_huf_prices_verified": false,
+  "referral_apple_jws_server_verification_deployed": false,
+  "referral_storekit_offer_redemption_sandbox_verified": false,
+  "referral_server_rls_anti_fraud_tested": false,
+  "referral_refunds_and_reinstall_risk_controls_tested": false,
+  "safe_diagnostics_live_iphone_watch_export_reviewed": false,
+  "iphone_080_signed_install_verified": false,
+  "watch_080_signed_install_verified": false,
+  "apple_sdk_080_ios_watch_compilation_verified": false
 }

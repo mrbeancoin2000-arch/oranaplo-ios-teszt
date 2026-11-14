@@ -23,7 +23,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertIn('Link(t("legal.terms.open")',app)
         self.assertIn('showLegalInformation = true',app)
         self.assertIn('Transaction.currentEntitlements',store)
-        self.assertIn('product.purchase()',store)
+        self.assertIn('product.purchase(options: options)',store)
         self.assertNotIn('proActive = true',store)
     def test_html_pages_exist_and_are_protected_drafts(self):
         for lang in ('hu','en','de'):

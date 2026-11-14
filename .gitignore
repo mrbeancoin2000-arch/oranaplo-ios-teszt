@@ -19,3 +19,9 @@ personal_health_*
 
 # Local user configuration must stay on Windows; generated Swift/Info.plist are uploaded.
 google_oauth.json
+*.xcresult/
+*.xcarchive/
+*.trace
+*.crash
+*.ips
+.DiagnosticReports/

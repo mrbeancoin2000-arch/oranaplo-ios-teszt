@@ -98,6 +98,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
             message = "run.status.storageDamaged"
             CrashCheckpoint.mark("run.storage.damaged")
             SafeDiagnosticTrail.mark(.runStorageDamaged)
+            DiagnosticCenter.record(.runRecoveryFailed, area: .gps, severity: .failure)
             return
         }
         let runs = recovered ?? []
@@ -213,6 +214,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         lastFix = nil; awaitingFixAfterPause = true; latestSpeedKmh = nil; message = "run.status.recording"
         phase = .recording
         SafeDiagnosticTrail.mark(.runStarted)
+        DiagnosticCenter.record(.runStarted, area: .gps)
         configureActiveGPS() // only while an explicitly started run is active
         manager.showsBackgroundLocationIndicator = true
         manager.startUpdatingLocation()
@@ -236,6 +238,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
         lastFix = nil; awaitingFixAfterPause = true
         message = "run.status.paused"
         SafeDiagnosticTrail.mark(.runPaused)
+        DiagnosticCenter.record(.runPaused, area: .gps)
         checkpoint(force: true)
     }
     func resume() {
@@ -264,6 +267,7 @@ final class RunTracker: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     func finish() {
         guard phase == .recording || phase == .paused, var run = current else { return }
+        DiagnosticCenter.record(.runFinished, area: .gps)
         if phase == .recording { pause() ; run = current ?? run }
         let now = Date()
         run.ended = now

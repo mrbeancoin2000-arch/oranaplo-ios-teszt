@@ -16,6 +16,7 @@ struct OraNaploApp: App {
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
                 .task {
                     OraUsageClock.register()
+                    DiagnosticCenter.record(.startup, area: .app)
                     await engine.bootstrap()
                     _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
                 }
@@ -30,11 +31,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             guard let task = task as? BGAppRefreshTask else { return }
             task.expirationHandler = { task.setTaskCompleted(success: false) }
             Task { @MainActor in
+                DiagnosticCenter.record(.backgroundTaskStart, area: .app)
                 // Apple's scheduling is opportunistic; never promise interval accuracy.
                 let engine = SyncEngine.shared
                 await engine.account.restore()
                 await engine.sync()
                 task.setTaskCompleted(success: true)
+                DiagnosticCenter.record(.backgroundTaskEnd, area: .app)
                 Self.schedule()
             }
         }
@@ -181,6 +184,7 @@ struct ContentView: View {
     @State private var journalKind = "journal.mood"
     @State private var journalText = ""
     @State private var showTechnicalDetails = false
+    @State private var showReferral = false
     @State private var showProfileUploadPrompt = false
     @State private var showLegalInformation = false
     @State private var showJournal = false
@@ -212,6 +216,7 @@ struct ContentView: View {
             if next == .active { Task { await subscriptions.refreshEntitlement() } }
         }
         .sheet(isPresented: $showLegalInformation) { legalInformationSheet }
+        .sheet(isPresented: $showReferral) { ReferralView() }
         .sheet(isPresented: $showJournal) { journal }
         .fileImporter(isPresented: $showXMLPicker, allowedContentTypes: [.xml], allowsMultipleSelection: false) { result in
             switch result {
@@ -622,6 +627,9 @@ struct ContentView: View {
                     Label(t("tier.verified"), systemImage: "checkmark.shield.fill")
                         .font(.system(size: 12)).foregroundStyle(Atelier.mint)
                 }
+                Button { showReferral = true } label: {
+                    ActionLabel(title: language == .en ? "Invite a friend" : (language == .de ? "Freunde einladen" : "Barát meghívása"), symbol: "person.2.badge.plus", primary: false)
+                }.buttonStyle(PressFeedback())
                 Button { showLegalInformation = true } label: {
                     ActionLabel(title: t("legal.title"), symbol: "doc.text.magnifyingglass", primary: false)
                 }.buttonStyle(PressFeedback())
@@ -952,11 +960,14 @@ struct ContentView: View {
                             .textSelection(.enabled)
                     }
                     Button {
-                        UIPasteboard.general.string = "ÓraNapló / " + t("settings.diagnostics") + "\n" +
-                            CrashCheckpoint.recentHistory + "\n" + CrashCheckpoint.environmentSummary +
-                            "\n" + engine.status + "\n" + subscriptions.technicalError
+                        UIPasteboard.general.string = DiagnosticCenter.exportText()
                     } label: {
                         ActionLabel(title: t("settings.copy"), symbol: "doc.on.doc", primary: false)
+                    }.buttonStyle(PressFeedback())
+                    Button {
+                        DiagnosticCenter.erase()
+                    } label: {
+                        ActionLabel(title: language == .hu ? "Biztonságos diagnosztikai napló törlése" : (language == .de ? "Diagnoseprotokoll löschen" : "Erase diagnostics"), symbol: "trash", primary: false)
                     }.buttonStyle(PressFeedback())
                 }
             }

@@ -28,6 +28,7 @@ final class WatchWorkout: NSObject, ObservableObject {
     private var lastBatteryTransfer = Date.distantPast
     override init() {
         super.init()
+        WatchDiagnostic.event(.launch)
         WKInterfaceDevice.current().isBatteryMonitoringEnabled = true
         refreshBattery()
         connect?.delegate = self
@@ -85,6 +86,7 @@ final class WatchWorkout: NSObject, ObservableObject {
                 session.startActivity(with:beganAt!)
                 try await live.beginCollection(at:beganAt!)
                 phase = .running
+                WatchDiagnostic.event(.workoutStarted)
                 sendControl("start")
                 startClock()
             } catch { info = error.localizedDescription }
@@ -120,7 +122,8 @@ final class WatchWorkout: NSObject, ObservableObject {
                 _ = try await builder?.finishWorkout()
                 sendCompletedWorkout()
                 phase = .finished
-            } catch { info = error.localizedDescription; phase = .finished }
+                WatchDiagnostic.event(.workoutStopped)
+            } catch { info = error.localizedDescription; phase = .finished; WatchDiagnostic.event(.transferFailed) }
         }
     }
     private func startClock() {

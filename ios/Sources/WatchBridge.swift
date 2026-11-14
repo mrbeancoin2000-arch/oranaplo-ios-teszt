@@ -22,6 +22,7 @@ final class WatchBridge: NSObject, ObservableObject {
         super.init()
         session?.delegate = self
         session?.activate()
+        DiagnosticCenter.record(.watchActivation, area: .watch)
     }
     func command(_ action: String) {
         guard ["start", "pause", "resume", "stop"].contains(action) else { return }
@@ -29,8 +30,12 @@ final class WatchBridge: NSObject, ObservableObject {
             lastWatchMessage = "watch.status.disconnected"
             return
         }
+        DiagnosticCenter.record(.watchTransfer, area: .watch)
         session.sendMessage(["kind":"control","action":action], replyHandler:nil) { [weak self] _ in
-            Task { @MainActor in self?.lastWatchMessage = "watch.status.sendFailed" }
+            Task { @MainActor in
+                self?.lastWatchMessage = "watch.status.sendFailed"
+                DiagnosticCenter.record(.watchTransferFailed, area: .watch, severity: .warning)
+            }
         }
     }
     private func receive(_ values: [String:Any]) {
@@ -52,7 +57,10 @@ final class WatchBridge: NSObject, ObservableObject {
                 if let session,session.activationState == .activated {
                     session.transferUserInfo(["kind":"waterAck","id":identifier])
                 }
-            } catch { lastWatchMessage = "watch.status.sendFailed" }
+            } catch {
+                lastWatchMessage = "watch.status.sendFailed"
+                DiagnosticCenter.record(.watchTransferFailed, area: .watch, severity: .warning)
+            }
 
         case "metrics":
             if let bpm = values["bpm"] as? Double, (25...250).contains(bpm) { watchBPM = bpm }

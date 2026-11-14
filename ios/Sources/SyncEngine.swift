@@ -51,6 +51,7 @@ final class SyncEngine: ObservableObject {
             await sync()
         }
         await recoverCurrentSheetIfNeeded()
+        DiagnosticCenter.record(.bootstrapOK, area: .app)
     }
 
     func refreshCount() async { await loadCurrentAccount() }
@@ -331,6 +332,7 @@ final class SyncEngine: ObservableObject {
             status = SyncStatusText.t("A saját futások részletes exportálásához Pro-előfizetés szükséges.", "Pro subscription required to export detailed runs.", "Für den detaillierten Laufexport ist Pro erforderlich."); return
         }
         guard account.loggedIn else {
+            DiagnosticCenter.record(.syncSkipped, area: .sync, severity: .warning)
             status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat.", "Connect your Google account first.", "Verbinde zuerst dein Google-Konto."); return
         }
         guard run.completed, let end = run.ended else {
@@ -414,6 +416,7 @@ final class SyncEngine: ObservableObject {
     func prepareGoogleSheet() async {
         guard !busy else { return }
         guard account.loggedIn else {
+            DiagnosticCenter.record(.syncSkipped, area: .sync, severity: .warning)
             status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat", "Connect your Google account first", "Verbinde zuerst dein Google-Konto")
             return
         }
@@ -436,6 +439,7 @@ final class SyncEngine: ObservableObject {
             CrashCheckpoint.mark("Google Sheets inicializálás: sikeres")
         } catch {
             markFailure(error)
+            DiagnosticCenter.record(.syncFailed, area: .sync, severity: .failure)
             pendingCount = await queue.count()
             status = SyncStatusText.t("Google Sheets hiba: \(error.localizedDescription)", "Google Sheets error: \(error.localizedDescription)", "Google-Sheets-Fehler: \(error.localizedDescription)")
             CrashCheckpoint.mark("Google Sheets inicializálás hiba: \(error.localizedDescription)")
@@ -451,11 +455,14 @@ final class SyncEngine: ObservableObject {
 
     func sync() async {
         guard !busy else { return }
+        DiagnosticCenter.record(.syncBegin, area: .sync)
         guard !autoSyncPaused else {
+            DiagnosticCenter.record(.syncSkipped, area: .sync, severity: .warning)
             status = SyncStatusText.t("A szinkronizálás szünetel a helyi törlés után. A folytatást külön engedélyezd.", "Sync is paused after local deletion. Explicitly enable it to continue.", "Synchronisierung nach lokaler Löschung pausiert. Zum Fortfahren ausdrücklich aktivieren.")
             return
         }
         guard account.loggedIn else {
+            DiagnosticCenter.record(.syncSkipped, area: .sync, severity: .warning)
             status = SyncStatusText.t("Először csatlakoztasd a Google-fiókodat", "Connect your Google account first", "Verbinde zuerst dein Google-Konto")
             return
         }
@@ -543,10 +550,12 @@ final class SyncEngine: ObservableObject {
             }
             try await flushQueue(using: sheets)
             markSuccess()
+            DiagnosticCenter.record(.syncFinished, area: .sync, count: lastUploadedCount)
             await refreshOverview()
             status = SyncStatusText.t("Sikeres ellenőrzés. \(pendingCount) sor várakozik.", "Check completed. \(pendingCount) rows pending.", "Prüfung abgeschlossen. \(pendingCount) Zeilen ausstehend.")
         } catch {
             markFailure(error)
+            DiagnosticCenter.record(.syncFailed, area: .sync, severity: .failure)
             pendingCount = await queue.count()
             status = SyncStatusText.t("Hiba: \(error.localizedDescription) – a helyi mentések megmaradnak", "Error: \(error.localizedDescription) – local saves are preserved", "Fehler: \(error.localizedDescription) – lokale Daten bleiben erhalten")
             let center = UNUserNotificationCenter.current()
@@ -565,6 +574,7 @@ final class SyncEngine: ObservableObject {
         // before retrying. No ACK means "unknown", not "failed".
         let inFlight = await queue.uncertainBatch()
         if !inFlight.isEmpty {
+            DiagnosticCenter.record(.queueRecovery, area: .queue, count: inFlight.count)
             let onServer = try await sheets.alreadyOnSheet(inFlight, sheetID: sheetID)
             let confirmed = inFlight.filter { onServer.contains($0.id) }
             if !confirmed.isEmpty { try await queue.didUpload(confirmed) }

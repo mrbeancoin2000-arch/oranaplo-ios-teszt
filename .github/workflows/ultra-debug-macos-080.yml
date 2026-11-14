@@ -1,0 +1,82 @@
+name: ÓraNapló 0.8 Mac SDK full diagnostic
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ios/**'
+      - 'watchOS/**'
+      - 'project.watch.yml'
+      - 'tools/**'
+      - 'supabase/**'
+      - 'tests/**'
+      - '.github/workflows/ultra-debug-macos-080.yml'
+jobs:
+  xcode-diagnostics:
+    runs-on: macos-15
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphonesimulator --show-sdk-version
+          xcrun --sdk watchsimulator --show-sdk-version
+          swiftc --version
+          python3 --version
+      - name: Python + Swift offline gates
+        run: |
+          python3 tools/ultra_debug.py --output-dir logs/macos_ultra
+      - name: Install XcodeGen and generate real Watch companion
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.watch.yml
+      - name: iPhone simulator compile plus xcresult
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/iphone-simulator \
+            -resultBundlePath iphone-simulator.xcresult CODE_SIGNING_ALLOWED=NO build 2>&1 \
+            | tee xcodebuild-iphone-simulator.log
+      - name: Apple Watch simulator compile plus xcresult
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaploWatch -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' -derivedDataPath build/watch-simulator \
+            -resultBundlePath watch-simulator.xcresult CODE_SIGNING_ALLOWED=NO build 2>&1 \
+            | tee xcodebuild-watch-simulator.log
+      - name: Unsigned iPhone device SDK compile
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild -project OraNaplo.xcodeproj -scheme OraNaplo -configuration Debug \
+            -destination 'generic/platform=iOS' -derivedDataPath build/iphone-device \
+            -resultBundlePath iphone-device.xcresult CODE_SIGNING_ALLOWED=NO build 2>&1 \
+            | tee xcodebuild-iphone-device.log
+      - name: Extract build results when available
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p logs/macos_ultra
+          for target in iphone-simulator watch-simulator iphone-device; do
+            if test -d "$target.xcresult"; then
+              xcrun xcresulttool get build-results --path "$target.xcresult" --format json \
+                > "logs/macos_ultra/$target-results.json" 2> "logs/macos_ultra/$target-extraction.log" || true
+            fi
+          done
+      - name: Upload full SDK logs even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OraNaplo-v080-AppleSDK-debug
+          path: |
+            logs/macos_ultra/**
+            xcodebuild-iphone-simulator.log
+            xcodebuild-watch-simulator.log
+            xcodebuild-iphone-device.log
+            iphone-simulator.xcresult/**
+            watch-simulator.xcresult/**
+            iphone-device.xcresult/**
+          if-no-files-found: ignore
+          retention-days: 14
