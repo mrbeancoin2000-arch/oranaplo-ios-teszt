@@ -5,7 +5,7 @@ def code(name): return (S/name).read_text(encoding='utf8')
 class Wellness070Tests(unittest.TestCase):
  def test_version_matches(self):
   for f in ['ios/Resources/Info.plist','watchOS/Info.plist']:
-   self.assertEqual(plistlib.loads((ROOT/f).read_bytes())['CFBundleShortVersionString'],'0.8.0')
+   self.assertEqual(plistlib.loads((ROOT/f).read_bytes())['CFBundleShortVersionString'],'0.8.2')
  def test_old_integrations_maintained(self):
   self.assertIn('HKAnchoredObjectQuery',code('HealthReader.swift'))
   self.assertIn('sample.uuid.uuidString',code('HealthReader.swift'))

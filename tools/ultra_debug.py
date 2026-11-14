@@ -121,7 +121,7 @@ def main() -> int:
     ]
     passed = all(s.get('pass') is True for s in steps if s.get('pass') is not None)
     report = {
-        'product':'ÓraNapló','version':'0.8.0','generated_utc':dt.datetime.now(dt.timezone.utc).isoformat(),
+        'product':'ÓraNapló','version':'0.8.2','generated_utc':dt.datetime.now(dt.timezone.utc).isoformat(),
         'offline_pass':passed,'offline_steps':steps,
         'gate':'BLOCKED_FOR_APP_STORE_RELEASE',
         'developer_account_purchase_decision': 'Code tests alone cannot certify device compatibility; continue signed device test after developer enrollment.',

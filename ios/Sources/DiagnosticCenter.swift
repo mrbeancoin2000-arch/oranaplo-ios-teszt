@@ -76,7 +76,8 @@ enum DiagnosticCenter {
         if records.count > maxRecords { records.removeFirst(records.count - maxRecords) }
         persistLocked()
         mutex.unlock()
-        logger.log(level: severity == .failure ? .error : (severity == .warning ? .notice : .info),
+        // OSLogType supports .default, .info, .debug, .error and .fault; no unsupported notice case.
+        logger.log(level: severity == .failure ? .error : (severity == .warning ? .default : .info),
                    "area=\(area.rawValue, privacy: .public) code=\(code.rawValue, privacy: .public)")
     }
     static func exportText() -> String {
